@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FocusGuard — Stay Focused. Actually.</title>
+  <meta name="description" content="FocusGuard is a Chrome extension that blocks distractions, powers your focus sessions, and uses AI to keep you on track across YouTube, Reddit, TikTok, and 8 more platforms." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="nav" id="navbar">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <div class="logo-icon">⚡</div>
+        <span>FocusGuard</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how-it-works">How it works</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+      </ul>
+      <a href="#pricing" class="nav-cta">Get Extension</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="hero-bg-glow"></div>
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        AI-Powered Focus Tool
+      </div>
+      <h1 class="hero-title">
+        Stop scrolling.<br/>
+        <span class="gradient-text">Start doing.</span>
+      </h1>
+      <p class="hero-subtitle">
+        FocusGuard is the Chrome extension that blocks distractions intelligently, 
+        runs focus sessions, and uses AI to make sure you're actually 
+        watching what matters — not what the algorithm wants.
+      </p>
+      <div class="hero-actions">
+        <a href="#pricing" class="btn-primary">
+          Get FocusGuard Free
+          <span class="btn-arrow">→</span>
+        </a>
+        <a href="#how-it-works" class="btn-ghost">See how it works</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat">
+          <span class="stat-num">11</span>
+          <span class="stat-label">Platforms Supported</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat">
+          <span class="stat-num">4</span>
+          <span class="stat-label">Focus Modes</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat">
+          <span class="stat-num">AI</span>
+          <span class="stat-label">Content Scanning</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="ext-mockup">
+        <div class="ext-header">
+          <div class="ext-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span class="ext-title">FocusGuard</span>
+        </div>
+        <div class="ext-body">
+          <div class="ext-input-mockup">
+            <span class="ext-input-label">I want to learn React today</span>
+          </div>
+          <div class="ext-session-row">
+            <div class="ext-session-chip active">25 min · Pomodoro</div>
+            <div class="ext-session-chip">60 min</div>
+            <div class="ext-session-chip">90 min</div>
+          </div>
+          <button class="ext-session-btn">▶ Start Focus Session</button>
+          <div class="ext-toggles">
+            <div class="ext-toggle-row">
+              <span>Tunnel Vision</span>
+              <div class="ext-toggle on"><div class="ext-thumb"></div></div>
+            </div>
+            <div class="ext-toggle-row">
+              <span>The Silencer</span>
+              <div class="ext-toggle on"><div class="ext-thumb"></div></div>
+            </div>
+            <div class="ext-toggle-row">
+              <span>AI Monitor</span>
+              <div class="ext-toggle premium-toggle on"><div class="ext-thumb"></div></div>
+            </div>
+          </div>
+        </div>
+        <!-- AI scan pulse overlay -->
+        <div class="ai-scan-overlay">
+          <div class="ai-scan-ring"></div>
+          <span class="ai-scan-label">✓ On-topic</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLATFORMS -->
+  <section class="platforms-section">
+    <p class="platforms-label">Works on every platform that distracts you</p>
+    <div class="platforms-strip">
+      <div class="platform-pill">▶ YouTube</div>
+      <div class="platform-pill">📘 Facebook</div>
+      <div class="platform-pill">📸 Instagram</div>
+      <div class="platform-pill">𝕏 Twitter / X</div>
+      <div class="platform-pill">🤿 Reddit</div>
+      <div class="platform-pill">💼 LinkedIn</div>
+      <div class="platform-pill">🎵 TikTok</div>
+      <div class="platform-pill">🎮 Twitch</div>
+      <div class="platform-pill">🎬 Netflix</div>
+      <div class="platform-pill">💬 Discord</div>
+      <div class="platform-pill">📌 Pinterest</div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features" id="features">
+    <div class="section-header">
+      <span class="section-tag">Features</span>
+      <h2>Built for people who <em>actually</em> want to focus</h2>
+      <p>Not another tab blocker. FocusGuard is an intelligent system that adapts to your goal.</p>
+    </div>
+    <div class="features-grid">
+
+      <div class="feature-card card-large">
+        <div class="feature-icon">🌀</div>
+        <h3>Tunnel Vision Mode</h3>
+        <p>Strips away sidebars, recommendations, comments, and all UI distractions — leaving only the content that matters. Like putting blinders on your browser.</p>
+        <div class="feature-tag">Free</div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🔇</div>
+        <h3>The Silencer</h3>
+        <p>Kills autoplay, auto-notifications, and sound from distraction sites the moment you start a session.</p>
+        <div class="feature-tag">Free</div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🩶</div>
+        <h3>Grayscale Mode</h3>
+        <p>Turns addictive, dopamine-triggering colour from social media feeds into flat grey. Proven to reduce mindless scroll time.</p>
+        <div class="feature-tag">Free</div>
+      </div>
+
+      <div class="feature-card card-highlight">
+        <div class="feature-icon">🤖</div>
+        <h3>AI Content Monitor</h3>
+        <p>Tell FocusGuard your goal, and it reads the video title, channel, and description. If the content doesn't match — it flags it and asks if you meant to watch it.</p>
+        <div class="feature-tag premium-tag">✦ Premium</div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">⏱️</div>
+        <h3>Focus Sessions</h3>
+        <p>Built-in Pomodoro (25 min), short sprints (30 min), long sessions (60 min), and deep work blocks (90 min). Set it and go.</p>
+        <div class="feature-tag">Free</div>
+      </div>
+
+      <div class="feature-card card-large">
+        <div class="feature-icon">🛡️</div>
+        <h3>Per-Platform Controls</h3>
+        <p>Individually tune what gets blocked on each platform. Hide reels but keep DMs. Block YouTube shorts but allow your subscriptions. Full granular control — your rules.</p>
+        <div class="feature-tag">Free</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how-it-works" id="how-it-works">
+    <div class="section-header">
+      <span class="section-tag">How it works</span>
+      <h2>From install to focused in 30 seconds</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-content">
+          <h4>Install the extension</h4>
+          <p>Add FocusGuard to Chrome from the Chrome Web Store — one click, no signup needed for free features.</p>
+        </div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-content">
+          <h4>Set your goal</h4>
+          <p>Type what you're trying to accomplish today — "Finish my thesis", "Learn Figma", "Study for exams".</p>
+        </div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-content">
+          <h4>Start your session</h4>
+          <p>Pick a duration, hit Start. FocusGuard activates your chosen modes and watches your back.</p>
+        </div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step">
+        <div class="step-num">04</div>
+        <div class="step-content">
+          <h4>AI keeps you honest</h4>
+          <p class="premium-step">Premium: Open YouTube and the AI checks if what you're watching is actually relevant to your goal — or just procrastination in disguise.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="pricing" id="pricing">
+    <div class="section-header">
+      <span class="section-tag">Pricing</span>
+      <h2>Start free. Go premium when you're ready.</h2>
+      <p>No credit card required to get started. Upgrade anytime.</p>
+    </div>
+    <div class="pricing-cards">
+
+      <!-- FREE CARD -->
+      <div class="pricing-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">
+          <span class="price-num">$0</span>
+          <span class="price-period">forever</span>
+        </div>
+        <p class="plan-desc">Everything you need to block distractions and focus.</p>
+        <ul class="plan-features">
+          <li>✓ Focus sessions (25 / 30 / 60 / 90 min)</li>
+          <li>✓ Tunnel Vision Mode</li>
+          <li>✓ The Silencer</li>
+          <li>✓ Grayscale Mode</li>
+          <li>✓ Per-platform controls</li>
+          <li>✓ All 11 platforms supported</li>
+          <li>✓ No account needed</li>
+        </ul>
+        <a href="#" class="plan-btn plan-btn-ghost" id="installBtn">Install Free →</a>
+      </div>
+
+      <!-- PREMIUM CARD -->
+      <div class="pricing-card pricing-card-premium">
+        <div class="plan-badge">Most Popular</div>
+        <div class="plan-name">Premium</div>
+        <div class="plan-price">
+          <span class="price-num">$4.99</span>
+          <span class="price-period">/ month</span>
+        </div>
+        <p class="plan-desc">For people serious about protecting their focus.</p>
+        <ul class="plan-features">
+          <li>✓ Everything in Free</li>
+          <li>✓ <strong>AI Content Monitor</strong></li>
+          <li>✓ Smart goal-relevance scanning</li>
+          <li>✓ Per-video AI analysis on YouTube</li>
+          <li>✓ 1,000 AI scans / day</li>
+          <li>✓ Priority support</li>
+          <li>✓ Early access to new features</li>
+        </ul>
+        <a href="#" class="plan-btn plan-btn-premium" id="upgradeBtn">
+          Get Premium
+          <span>→</span>
+        </a>
+        <p class="plan-note">Cancel anytime. No questions asked.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq" id="faq">
+    <div class="section-header">
+      <h2>Common questions</h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">Do I need an account to use FocusGuard?</button>
+        <div class="faq-a">No account needed for free features. All free features (Tunnel Vision, Silencer, Grayscale, Sessions) work completely offline and locally. An account is only required to access Premium AI features.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">How do I sign up for Premium?</button>
+        <div class="faq-a">Click "Get Premium" above. You can sign in with Google, get a magic link sent to your email, or create an account with email and password. After payment, your extension is unlocked automatically.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">What does the AI Monitor actually do?</button>
+        <div class="faq-a">When you open YouTube during a focus session, the AI reads the video title, channel name, and description and compares it to your stated goal. If the content seems off-topic — say you said "studying React" but opened a gaming video — it flags it and lets you decide to continue or go back.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">Does FocusGuard read my browsing data?</button>
+        <div class="faq-a">Only the minimum needed. For AI scanning, video titles and descriptions are sent to our server to be analyzed. No personal data, no history, no cookies are ever collected or stored.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">Can I cancel my subscription?</button>
+        <div class="faq-a">Yes. Cancel anytime from your account settings. You'll keep Premium access until the end of your billing period.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER CTA -->
+  <section class="footer-cta">
+    <div class="footer-cta-glow"></div>
+    <h2>Your attention is worth protecting.</h2>
+    <p>Join thousands of people who chose deep focus over endless scroll.</p>
+    <a href="#pricing" class="btn-primary">Get FocusGuard — It's Free</a>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="nav-logo">
+          <div class="logo-icon">⚡</div>
+          <span>FocusGuard</span>
+        </div>
+        <p>Your AI-powered focus companion.</p>
+      </div>
+      <div class="footer-links">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="mailto:support@focusguard.app">Support</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>© 2025 FocusGuard. Built to help you do your best work.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,214 @@
+{
+  "manifest_version": 3,
+  "name": "Anti-Distraction Focus Tool",
+  "version": "1.0",
+  "description": "A powerful anti-distraction tool with Tunnel Vision, Silencer, and focus monitoring.",
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "alarms",
+    "windows",
+    "identity"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Focus Settings"
+  },
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content/ai/ai-monitor.js",
+        "content/platforms/youtube.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.reddit.com/*"
+      ],
+      "js": [
+        "content/ai/ai-monitor.js",
+        "content/platforms/reddit.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.linkedin.com/*"
+      ],
+      "js": [
+        "content/platforms/linkedin.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.facebook.com/*"
+      ],
+      "js": [
+        "content/blocked-site-overlay.js",
+        "content/platforms/facebook.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.instagram.com/*"
+      ],
+      "js": [
+        "content/blocked-site-overlay.js",
+        "content/platforms/instagram.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.pinterest.com/*",
+        "*://*.pinterest.co.uk/*"
+      ],
+      "js": [
+        "content/blocked-site-overlay.js",
+        "content/platforms/pinterest.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.discord.com/*"
+      ],
+      "js": [
+        "content/blocked-site-overlay.js",
+        "content/platforms/discord.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "content/blocked-site-overlay.js",
+        "content/platforms/twitch.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.tiktok.com/*"
+      ],
+      "js": [
+        "content/blocked-site-overlay.js",
+        "content/platforms/tiktok.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.netflix.com/*"
+      ],
+      "js": [
+        "content/blocked-site-overlay.js",
+        "content/platforms/netflix.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content/platforms/pages.js",
+        "content/overlay.js",
+        "content/timer.js"
+      ],
+      "css": [
+        "content/blocker.css"
+      ],
+      "run_at": "document_end",
+      "exclude_matches": [
+        "*://*.youtube.com/*",
+        "*://*.reddit.com/*",
+        "*://*.linkedin.com/*",
+        "*://*.facebook.com/*",
+        "*://*.instagram.com/*",
+        "*://*.pinterest.com/*",
+        "*://*.pinterest.co.uk/*",
+        "*://*.discord.com/*",
+        "*://*.twitch.tv/*",
+        "*://*.tiktok.com/*",
+        "*://*.netflix.com/*"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/overlay.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+/* Universal Blocker and Specific Site Rules */
+
+/* Global Silencer Helper */
+.silencer-active #comments,
+.silencer-active .comments-area {
+    display: none !important;
+}
+
+/* YouTube Shorts Blocker */
+ytd-reel-shelf-renderer,
+ytd-shorts {
+    display: none !important;
+}
+
+/* Instagram Reels Blocker */
+a[href*="/reels/"] {
+    display: none !important;
+}
+
+.grayscale-mode {
+    filter: grayscale(100%) !important;
+}
