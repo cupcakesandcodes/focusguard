@@ -91,11 +91,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       settings: request.settings
     });
   } else if (request.action === "checkSiteAccess") {
-    // Check if site is restricted and if it's allowed for this session
-    const hostname = request.hostname;
-    const isRestricted = RESTRICTED_SITES.some(site => hostname.includes(site));
-    const isAllowed = !isRestricted || sessionAllowedSites.has(hostname);
-    sendResponse({ allowed: isAllowed });
+    // Only block restricted sites if the user has an active focus session.
+    // Without an active session, all sites should be freely accessible.
+    chrome.storage.local.get(['activeSession'], (storage) => {
+      const hostname = request.hostname.toLowerCase();
+      const hasActiveSession = !!(storage.activeSession && storage.activeSession.endTime > Date.now());
+
+      if (!hasActiveSession) {
+        // No active session — never block anything
+        sendResponse({ allowed: true });
+        return;
+      }
+
+      // Check Whitelist FIRST
+      if (isWhitelisted(hostname)) {
+        sendResponse({ allowed: true });
+        return;
+      }
+
+      const isRestricted = RESTRICTED_SITES.some(site => hostname.includes(site));
+
+      // If AI Monitor is on, we skip static/free tier blocking to let the AI decide
+      chrome.storage.local.get(['aiMonitor'], (aiRes) => {
+        const isAllowed = !isRestricted || sessionAllowedSites.has(hostname) || !!aiRes.aiMonitor;
+        sendResponse({ allowed: isAllowed });
+      });
+    });
     return true; // Keep channel open for async response
   } else if (request.action === "allowSiteForSession") {
     // Grant temporary access for this session
@@ -116,6 +137,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
 
     sendResponse({ success: true });
+    return true;
+  } else if (request.action === "fetchAI") {
+    // Proxy the AI API call through background to bypass page CSP (e.g. Reddit)
+    fetch(`http://127.0.0.1:3000/api/ai/check-ai`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${request.token}`
+      },
+      body: JSON.stringify(request.payload)
+    })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        sendResponse({ status: res.status, ok: res.ok, data });
+      })
+      .catch(err => {
+        sendResponse({ status: 500, ok: false, data: { error: err.message } });
+      });
+
+    return true; // Keep channel open for async response
+  } else if (request.action === "refreshToken") {
+    fetch(`http://127.0.0.1:3000/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: request.refreshToken })
+    })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        sendResponse({ status: res.status, ok: res.ok, data });
+      })
+      .catch(err => {
+        sendResponse({ status: 500, ok: false, data: { error: err.message } });
+      });
+    return true;
+  } else if (request.action === "authMe") {
+    fetch(`http://127.0.0.1:3000/api/auth/me`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${request.token}`
+      }
+    })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        sendResponse({ status: res.status, ok: res.ok, data });
+      })
+      .catch(err => {
+        sendResponse({ status: 500, ok: false, data: { error: err.message } });
+      });
     return true;
   }
 });
@@ -188,9 +257,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 let sessionWhitelist = new Set();
 
 async function performCheck() {
-  // CRITICAL FIX: Respect the User's choice!
-  const { aiMonitor } = await chrome.storage.local.get("aiMonitor");
-  if (!aiMonitor) return;
+  // CRITICAL: If AI Monitor is on, the background script should NOT run the local heuristic check (Free Feature)
+  // We only run this if AI Monitor is OFF or if the user is NOT premium (fallback).
+  // But per user request: "no free features works, when aimonitor is on"
+  const { aiMonitor, isPremium } = await chrome.storage.local.get(["aiMonitor", "isPremium"]);
+  if (!aiMonitor || isPremium) return;
 
   const { currentGoal, learnedKeywords } = await chrome.storage.local.get(['currentGoal', 'learnedKeywords']);
   if (!currentGoal) return;
@@ -222,7 +293,10 @@ function isWhitelisted(urlStr) {
       // Don't auto-delete here, let the alarm handle cleanup logic
     }
 
-    const safe = ['google.com', 'stackoverflow.com', 'github.com', 'localhost', '127.0.0.1'];
+    const safe = [
+      'google.com', 'stackoverflow.com', 'github.com', 'localhost', '127.0.0.1',
+      'chatgpt.com', 'openai.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai', 'anthropic.com'
+    ];
     if (safe.some(s => url.hostname.includes(s))) return true;
     return false;
   } catch { return false; }

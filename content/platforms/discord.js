@@ -1,3 +1,4 @@
+(function() {
 // Discord-Specific Content Script with Default Blocking
 console.log("💬 Discord Focus Guard Loaded");
 
@@ -118,3 +119,5 @@ setTimeout(() => {
 }, 500);
 
 console.log("💬 Discord Focus Guard Ready");
+
+})();

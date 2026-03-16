@@ -1,3 +1,4 @@
+(function() {
 // Reddit-Specific Content Script - Accurate DOM-based Blocking
 console.log("🔴 Reddit Focus Guard Loaded");
 
@@ -621,6 +622,25 @@ async function processAllPosts() {
         container.style.display = '';
     });
 
+    // Determine if we should use AI Monitor for platform sites (Premium)
+    chrome.storage.local.get(['aiMonitor', 'isPremium'], async (result) => {
+        const usePremiumAIMonitor = result.aiMonitor && result.isPremium;
+
+        if (usePremiumAIMonitor) {
+            console.log("🤖 Premium AI Monitor is active - skipping keyword fallback on Reddit.");
+            // We exit because ai-monitor.js will handle the full-page block
+            return;
+        }
+
+        console.log("🔑 Using keyword analysis (Free)");
+        _runKeywordFallback();
+    });
+}
+
+/**
+ * Keyword-based fallback for free users
+ */
+async function _runKeywordFallback() {
     // Check if we're on a search results page
     const searchQuery = new URLSearchParams(window.location.search).get('q');
     if (searchQuery) {
@@ -705,29 +725,12 @@ async function processAllPosts() {
 
     console.log(`Analyzing ${postsToAnalyze.length} new posts...`);
 
-    // Check if AI analyzer is available AND has valid API key (premium mode)
-    // We check if the module exists and the API key is not the placeholder
-    const useAI = false; // Temporarily disabled until API key is configured
-
-    if (useAI) {
-        // PREMIUM: Use AI analysis
-        console.log("🤖 Using AI analysis (Premium)");
-        const results = await window.aiAnalyzer.batchAnalyze(postsToAnalyze, 'reddit', currentGoal);
-
-        // Apply filtering based on AI results
-        results.forEach((isRelevant, index) => {
-            applyPostFiltering(postElements[index], isRelevant);
-            console.log(`Post "${postsToAnalyze[index].title.substring(0, 50)}..." - ${isRelevant ? 'RELEVANT' : 'IRRELEVANT'} (AI)`);
-        });
-    } else {
-        // FREE: Use keyword-based analysis
-        console.log("🔑 Using keyword analysis (Free)");
-        postsToAnalyze.forEach((postData, index) => {
-            const isRelevant = checkPostRelevance(postData);
-            applyPostFiltering(postElements[index], isRelevant);
-            console.log(`Post "${postData.title.substring(0, 50)}..." - ${isRelevant ? 'RELEVANT' : 'IRRELEVANT'} (Keyword)`);
-        });
-    }
+    // FREE: Use keyword-based analysis
+    postsToAnalyze.forEach((postData, index) => {
+        const isRelevant = checkPostRelevance(postData);
+        applyPostFiltering(postElements[index], isRelevant);
+        console.log(`Post "${postData.title.substring(0, 50)}..." - ${isRelevant ? 'RELEVANT' : 'IRRELEVANT'} (Keyword)`);
+    });
 }
 
 /**
@@ -777,3 +780,5 @@ chrome.storage.local.get(['activeSession'], (result) => {
 });
 
 console.log("🔴 Reddit Focus Guard Ready");
+
+})();

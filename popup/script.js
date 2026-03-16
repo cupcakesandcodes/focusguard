@@ -2,8 +2,8 @@
 //  FocusGuard Popup — Auth Logic
 // ══════════════════════════════════════════════════
 
-const BACKEND_URL = 'http://localhost:3000/api'; // Local dev server
-const PRICING_URL = 'https://cupcakesandcodes.github.io/antidistract#pricing';
+const BACKEND_URL = 'http://127.0.0.1:3000/api'; // Local dev server (using IP for reliability on Windows)
+const PRICING_URL = 'https://antidistract.vercel.app/#pricing';
 const DAILY_LIMIT = 150;
 
 // ── Views ─────────────────────────────────────────
@@ -45,7 +45,12 @@ chrome.storage.local.get(['authToken', 'userEmail', 'isPremium', 'refreshToken']
                     return;
                 }
             }
-        } catch (e) { /* network error */ }
+        } catch (e) {
+            console.error("Auth verification failed:", e);
+            if (e.message.includes('Failed to fetch')) {
+                console.warn("Backend server seems to be offline.");
+            }
+        }
     }
 
     // Not logged in or invalid token
@@ -101,7 +106,7 @@ function renderAccountPanel(user) {
     }
 
     // Save premium status so content scripts can read it
-    chrome.storage.local.set({ isPremium, userEmail: user.email });
+    chrome.storage.local.set({ isPremium, useAIMode: isPremium, userEmail: user.email });
 }
 
 // ── Tab switching ──────────────────────────────────
@@ -177,23 +182,29 @@ document.getElementById('googleSignInBtn').addEventListener('click', () => {
         }
 
         chrome.storage.local.set({ authToken: token, refreshToken: refresh });
-        const res = await fetch(`${BACKEND_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } });
-        if (!res.ok) {
-            const errText = await res.text();
-            alert("Google Auth Error: Backend rejected token. Details: " + errText);
-            console.error("Backend rejected token:", errText);
-            return;
-        }
-        const { user } = await res.json();
 
-        if (user.subscriptionTier !== 'premium') {
-            chrome.tabs.create({ url: PRICING_URL });
-        }
+        try {
+            const res = await fetch(`${BACKEND_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!res.ok) {
+                const errText = await res.text();
+                alert("Google Auth Error: Backend rejected token. Details: " + errText);
+                console.error("Backend rejected token:", errText);
+                return;
+            }
+            const { user } = await res.json();
 
-        renderAccountPanel(user);
-        showMainView();
-        showAccountPanel();
-        document.getElementById('explorePremiumBtn').style.display = 'none';
+            if (user.subscriptionTier !== 'premium') {
+                chrome.tabs.create({ url: PRICING_URL });
+            }
+
+            renderAccountPanel(user);
+            showMainView();
+            showAccountPanel();
+            document.getElementById('explorePremiumBtn').style.display = 'none';
+        } catch (e) {
+            console.error("Fetch error at line 180:", e);
+            alert("Connection Error: Could not reach the backend server. Please ensure it is running at " + BACKEND_URL);
+        }
     });
 });
 

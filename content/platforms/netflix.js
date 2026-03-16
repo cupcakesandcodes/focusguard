@@ -1,3 +1,4 @@
+(function() {
 // Netflix-Specific Content Script with Default Blocking
 console.log("🎬 Netflix Focus Guard Loaded");
 
@@ -110,3 +111,5 @@ setTimeout(() => {
 }, 500);
 
 console.log("🎬 Netflix Focus Guard Ready");
+
+})();

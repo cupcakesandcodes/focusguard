@@ -4,9 +4,9 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-// ── Model: Gemini 1.5 Flash (~20x cheaper than Pro) ──
+// ── Model: Gemini 2.0 Flash Lite (Fast and Efficient) ──
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 // ── In-memory result cache: videoId → { result, cachedAt } ──
 // Key: SHA-1-like string of "goal|videoTitle|channel"
@@ -14,9 +14,9 @@ const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 const resultCache = new Map();
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-function getCacheKey(goal, videoTitle, videoChannel = '') {
+function getCacheKey(goal, videoTitle, videoChannel = '', userJustification = '') {
     // Normalize so minor differences don't bypass cache
-    const normalized = [goal, videoTitle, videoChannel]
+    const normalized = [goal, videoTitle, videoChannel, userJustification]
         .map(s => s.toLowerCase().trim())
         .join('|');
     return Buffer.from(normalized).toString('base64').slice(0, 64);
@@ -80,20 +80,21 @@ router.post('/check-keyword', async (req, res) => {
 
 // ─────────────────────────────────────────
 // AI-based check (PREMIUM — requires auth)
-// Uses Gemini 1.5 Flash + result caching
+// Uses Gemini 2.0 Flash Lite + result caching
 // ─────────────────────────────────────────
 router.post('/check-ai', authMiddleware, async (req, res) => {
     try {
-        const { goal, videoTitle, videoDescription, videoChannel } = req.body;
+        const { goal, videoTitle, videoDescription, videoChannel, userJustification } = req.body;
 
-        if (!goal || !videoTitle) {
-            return res.status(400).json({ error: 'Goal and video title required' });
+        if (!goal || (!videoTitle && !videoDescription)) {
+            return res.status(400).json({ error: 'Goal and page context required' });
         }
 
         const user = req.user;
+        const profile = req.profile; // set by authMiddleware
 
         // ── Check subscription ──
-        if (user.subscription_tier !== 'premium' || user.subscription_status !== 'active') {
+        if (profile.subscription_tier !== 'premium' || profile.subscription_status !== 'active') {
             return res.status(403).json({
                 error: 'AI Monitor requires a Premium subscription',
                 upgradeUrl: process.env.PRICING_PAGE_URL || '/pricing'
@@ -101,7 +102,6 @@ router.post('/check-ai', authMiddleware, async (req, res) => {
         }
 
         // ── Check daily limit ──
-        const profile = user.profile; // attached by middleware
         const lastReset = new Date(profile.usage_ai_last_reset);
         const now = new Date();
         const isNewDay = now.toDateString() !== lastReset.toDateString();
@@ -117,7 +117,7 @@ router.post('/check-ai', authMiddleware, async (req, res) => {
         }
 
         // ── Check cache ──
-        const cacheKey = getCacheKey(goal, videoTitle, videoChannel || '');
+        const cacheKey = getCacheKey(goal, videoTitle, videoChannel || '', userJustification || '');
         const cached = getCached(cacheKey);
         if (cached) {
             return res.json({
@@ -128,20 +128,41 @@ router.post('/check-ai', authMiddleware, async (req, res) => {
             });
         }
 
-        // ── Call Gemini 1.5 Flash ──
-        const prompt = `You are a focus assistant. Determine if this content is relevant to the user's goal.
+        // ── Call Gemini ──
+        const url = req.body.url || '';
+
+        let prompt = `You are a focus assistant for a productivity extension. Determine if this web page is relevant to the user's goal.
 
 User's Goal: "${goal}"
 
-Content:
+Page Info:
 - Title: ${videoTitle}
-- Channel: ${videoChannel || 'N/A'}
-- Description: ${(videoDescription || '').slice(0, 300)}
+- Site/Channel: ${videoChannel || 'N/A'}
+- URL: ${url}
+- Description/Content: ${(videoDescription || '').slice(0, 500)}`;
 
-Reply ONLY with a JSON object, no markdown:
-{"isRelevant": true/false, "confidence": 0.0-1.0, "reasoning": "one sentence"}
+        if (userJustification) {
+            prompt += `
+            
+The user was previously blocked from this page, but they submitted a justification for why they need it:
+User's Justification: "${userJustification}"
 
-Be strict. Entertainment unrelated to the goal = not relevant.`;
+Evaluate their justification considering their goal and the page content. If their reasoning relates to research, learning, productivity, or work, you MUST allow it (isRelevant: true). FocusGuard should stay out of the way of legitimate work. Only block if the justification is clearly unrelated or an attempt to bypass the monitor for entertainment.`;
+        } else {
+            prompt += `
+            
+IMPORTANT RULES:
+1. Use the URL as a strong signal. developer.mozilla.org, docs.*, github.com, stackoverflow.com, npmjs.com, w3schools.com, official docs, tutorials = highly likely relevant.
+2. AI Tools (chatgpt.com, openai.com, claude.ai, gemini.google.com, perplexity.ai) = Almost always relevant for productivity and research goals. Mark as relevant.
+3. Search engine results (google.com/search, bing.com) = relevant if the query relates to the goal.
+4. Be VERY LENIENT with documentation, reference, and learning sites. If the goal is technical, research-based, or work-related, lean heavily toward relevant.
+5. Only mark NOT relevant if the page is clearly unrelated entertainment/social content (gaming, sports, movies) for a non-matching goal.`;
+        }
+
+        prompt += `
+
+Reply ONLY with a JSON object, no markdown, no code fences:
+{"isRelevant": true/false, "confidence": 0.0-1.0, "reasoning": "one short sentence explaining why"}`;
 
         const result = await model.generateContent(prompt);
         const text = result.response.text().trim();
@@ -175,8 +196,9 @@ Be strict. Entertainment unrelated to the goal = not relevant.`;
         });
 
     } catch (error) {
-        console.error('AI check error:', error);
-        res.status(500).json({ error: 'AI analysis failed. Please try again.' });
+        console.error('AI check error:', error.message);
+        console.error('AI check stack:', error.stack);
+        res.status(500).json({ error: 'AI analysis failed. Please try again.', detail: error.message });
     }
 });
 

@@ -58,6 +58,7 @@
         "*://*.linkedin.com/*"
       ],
       "js": [
+        "content/ai/ai-monitor.js",
         "content/platforms/linkedin.js",
         "content/overlay.js",
         "content/timer.js"
@@ -72,6 +73,7 @@
         "*://*.facebook.com/*"
       ],
       "js": [
+        "content/ai/ai-monitor.js",
         "content/blocked-site-overlay.js",
         "content/platforms/facebook.js",
         "content/overlay.js",
@@ -87,6 +89,7 @@
         "*://*.instagram.com/*"
       ],
       "js": [
+        "content/ai/ai-monitor.js",
         "content/blocked-site-overlay.js",
         "content/platforms/instagram.js",
         "content/overlay.js",
@@ -103,6 +106,7 @@
         "*://*.pinterest.co.uk/*"
       ],
       "js": [
+        "content/ai/ai-monitor.js",
         "content/blocked-site-overlay.js",
         "content/platforms/pinterest.js",
         "content/overlay.js",
@@ -118,6 +122,7 @@
         "*://*.discord.com/*"
       ],
       "js": [
+        "content/ai/ai-monitor.js",
         "content/blocked-site-overlay.js",
         "content/platforms/discord.js",
         "content/overlay.js",
@@ -133,6 +138,7 @@
         "*://*.twitch.tv/*"
       ],
       "js": [
+        "content/ai/ai-monitor.js",
         "content/blocked-site-overlay.js",
         "content/platforms/twitch.js",
         "content/overlay.js",
@@ -178,6 +184,7 @@
         "<all_urls>"
       ],
       "js": [
+        "content/ai/ai-monitor.js",
         "content/platforms/pages.js",
         "content/overlay.js",
         "content/timer.js"

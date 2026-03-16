@@ -1,3 +1,4 @@
+(function() {
 // Instagram-Specific Content Script with Default Blocking
 console.log("📸 Instagram Focus Guard Loaded");
 
@@ -266,3 +267,5 @@ setTimeout(() => {
 }, 500);
 
 console.log("📸 Instagram Focus Guard Ready");
+
+})();

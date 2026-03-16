@@ -1,3 +1,4 @@
+(function() {
 // Twitch-Specific Content Script with Default Blocking
 console.log("🎮 Twitch Focus Guard Loaded");
 
@@ -122,3 +123,5 @@ setTimeout(() => {
 }, 500);
 
 console.log("🎮 Twitch Focus Guard Ready");
+
+})();

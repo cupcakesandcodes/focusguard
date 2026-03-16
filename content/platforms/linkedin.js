@@ -1,3 +1,4 @@
+(function() {
 // LinkedIn-Specific Content Script
 console.log("LinkedIn Silencer Loaded");
 
@@ -72,3 +73,5 @@ function hideLinkedInDistractions() {
         el.style.opacity = '0.2';
     });
 }
+
+})();

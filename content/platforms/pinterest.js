@@ -1,3 +1,4 @@
+(function() {
 // Pinterest-Specific Content Script with Default Blocking
 console.log("📌 Pinterest Focus Guard Loaded");
 
@@ -129,3 +130,5 @@ setTimeout(() => {
 }, 500);
 
 console.log("📌 Pinterest Focus Guard Ready");
+
+})();

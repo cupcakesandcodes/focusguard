@@ -1,416 +1,425 @@
 // YouTube-Specific Content Script with Smart Goal Checking
-console.log("🎬 YouTube Focus Guard Loaded");
+(function () {
+    console.log("🎬 YouTube Focus Guard Loaded");
 
-let silencerEnabled = false;
-let grayscaleEnabled = false;
-let aiMonitorEnabled = false;
-let useAIMode = false; // Premium feature
-let authToken = null;
-let currentGoal = "";
-let checkedVideos = new Set();
-let whitelistedVideos = new Set();
-let learnedKeywords = {}; // Dictionary: { "goal": ["keyword1", "keyword2"] }
-let youtubeSettings = {}; // Platform-specific settings from popup
+    let silencerEnabled = false;
+    let grayscaleEnabled = false;
+    let aiMonitorEnabled = false;
+    let useAIMode = false; // Premium feature
+    let authToken = null;
+    let currentGoal = "";
+    let checkedVideos = new Set();
+    let whitelistedVideos = new Set();
+    let learnedKeywords = {}; // Dictionary: { "goal": ["keyword1", "keyword2"] }
+    let youtubeSettings = {}; // Platform-specific settings from popup
 
-const API_URL = 'https://your-backend-url.com/api'; // Will be configured
+    const API_URL = 'https://your-backend-url.com/api'; // Will be configured
 
-// Initial State Check
-chrome.storage.local.get(['silencerMode', 'grayscaleMode', 'aiMonitor', 'currentGoal', 'useAIMode', 'authToken', 'learnedKeywords', 'youtubeSettings'], (result) => {
-    silencerEnabled = result.silencerMode || false;
-    grayscaleEnabled = result.grayscaleMode || false;
-    aiMonitorEnabled = result.aiMonitor || false;
-    useAIMode = result.useAIMode || false;
-    authToken = result.authToken || null;
-    currentGoal = result.currentGoal || "";
-    learnedKeywords = result.learnedKeywords || {};
-    youtubeSettings = result.youtubeSettings || {};
+    // Initial State Check
+    chrome.storage.local.get(['silencerMode', 'grayscaleMode', 'aiMonitor', 'currentGoal', 'useAIMode', 'authToken', 'learnedKeywords', 'youtubeSettings'], (result) => {
+        silencerEnabled = result.silencerMode || false;
+        grayscaleEnabled = result.grayscaleMode || false;
+        aiMonitorEnabled = result.aiMonitor || false;
+        useAIMode = result.useAIMode || false;
+        authToken = result.authToken || null;
+        currentGoal = result.currentGoal || "";
+        learnedKeywords = result.learnedKeywords || {};
+        youtubeSettings = result.youtubeSettings || {};
 
-    // DEBUG: Show what was loaded
-    console.log("🔧 YouTube Script Initialized:");
-    console.log("  - AI Monitor:", aiMonitorEnabled);
-    console.log("  - Current Goal:", currentGoal || "(none)");
-    console.log("  - Silencer:", silencerEnabled);
-    console.log("  - Use AI Mode:", useAIMode);
-    console.log("  - Learned Keywords:", learnedKeywords);
-    console.log("  - YouTube Settings:", youtubeSettings);
+        // DEBUG: Show what was loaded
+        console.log("🔧 YouTube Script Initialized:");
+        console.log("  - AI Monitor:", aiMonitorEnabled);
+        console.log("  - Current Goal:", currentGoal || "(none)");
+        console.log("  - Silencer:", silencerEnabled);
+        console.log("  - Use AI Mode:", useAIMode);
+        console.log("  - Learned Keywords:", learnedKeywords);
+        console.log("  - YouTube Settings:", youtubeSettings);
 
-    if (silencerEnabled) enableSilencer();
-    if (grayscaleEnabled) enableGrayscale();
-    applyYouTubeSettings(); // Apply platform-specific settings
-    if (aiMonitorEnabled && currentGoal) {
-        console.log("✅ Starting initial check...");
-        checkCurrentVideo();
-    } else {
-        console.warn("⚠️ AI Monitor not active:", {
-            aiMonitorEnabled,
-            hasGoal: !!currentGoal
-        });
-    }
-
-    console.log(`🎯 Mode: ${useAIMode ? 'AI (Premium)' : 'Keyword (Free)'}`);
-});
-
-// Listener for real-time updates
-chrome.runtime.onMessage.addListener((request) => {
-    if (request.action === "updateMode") {
-        if (request.key === "silencerMode") {
-            silencerEnabled = request.value;
-            request.value ? enableSilencer() : disableSilencer();
-        } else if (request.key === "grayscaleMode") {
-            grayscaleEnabled = request.value;
-            request.value ? enableGrayscale() : disableGrayscale();
-        } else if (request.key === "aiMonitor") {
-            aiMonitorEnabled = request.value;
-            if (request.value && currentGoal) {
-                checkCurrentVideo();
-            }
-        }
-    } else if (request.action === "updateGoal") {
-        chrome.storage.local.get('currentGoal', (result) => {
-            currentGoal = result.currentGoal || "";
-            console.log("🎯 Goal updated to:", currentGoal);
-
-            // Clear all processed flags so videos get re-checked
-            document.querySelectorAll('[data-goal-processed]').forEach(el => {
-                delete el.dataset.goalProcessed;
-            });
-            console.log("🔄 Cleared all processed video flags");
-
-            if (aiMonitorEnabled && currentGoal) {
-                checkedVideos.clear();
-                console.log("✅ Re-checking with new goal...");
-                checkCurrentVideo();
-            } else {
-                console.warn("⚠️ Cannot check - AI Monitor:", aiMonitorEnabled, "Goal:", currentGoal);
-            }
-        });
-    } else if (request.action === "removeOverlay") {
-        removeGoalOverlay();
-    } else if (request.action === "platformSettingsUpdated" && request.platform === "youtube") {
-        youtubeSettings = request.settings;
-        console.log("🎬 YouTube settings updated:", youtubeSettings);
-        applyYouTubeSettings();
-    }
-});
-
-// Watch for URL changes (YouTube is a SPA)
-let lastUrl = location.href;
-new MutationObserver(() => {
-    const url = location.href;
-    if (url !== lastUrl) {
-        lastUrl = url;
-        console.log("📍 YouTube navigation detected");
+        if (silencerEnabled) enableSilencer();
+        if (grayscaleEnabled) enableGrayscale();
+        applyYouTubeSettings(); // Apply platform-specific settings
         if (aiMonitorEnabled && currentGoal) {
-            setTimeout(() => checkCurrentVideo(), 1000);
+            console.log("✅ Starting initial check...");
+            checkCurrentVideo();
+        } else {
+            console.warn("⚠️ AI Monitor not active:", {
+                aiMonitorEnabled,
+                hasGoal: !!currentGoal
+            });
         }
-    }
-}).observe(document, { subtree: true, childList: true });
 
-// FIX 1: Continuous browse monitoring (handles infinite scroll)
-const browseObserver = new MutationObserver(() => {
-    if (!aiMonitorEnabled || !currentGoal) return;
-
-    const pathname = window.location.pathname;
-    if (
-        pathname === '/' ||
-        pathname.includes('/results') ||
-        pathname.includes('/feed')
-    ) {
-        checkBrowsePage();
-    }
-});
-
-browseObserver.observe(document.body, {
-    childList: true,
-    subtree: true
-});
-
-// FIX 2: Click interception (blocks clicks on blurred videos)
-document.addEventListener('click', (e) => {
-    // Don't intercept if clicking the unblur button
-    if (e.target.classList.contains('unblur-btn')) {
-        return;
-    }
-
-    const anchor = e.target.closest('a#video-title');
-    if (!anchor) return;
-
-    const renderer = anchor.closest(
-        'ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer'
-    );
-
-    if (!renderer) return;
-
-    // If video is blurred (check for pointer-events: none)
-    if (renderer.style.pointerEvents === 'none') {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const title = anchor.textContent.trim();
-        const channel =
-            renderer.querySelector('#channel-name a')?.textContent.trim() || '';
-
-        showGoalOverlay({
-            title,
-            channel,
-            description: '',
-            metaDesc: '',
-            metaKeywords: '',
-            url: anchor.href
-        }, 'keyword');
-
-        console.log("🚫 Blocked off-track video click:", title);
-    }
-}, true);
-
-// FIX 3: Video play detection (catches autoplay)
-document.addEventListener('play', (e) => {
-    if (e.target.tagName === 'VIDEO') {
-        console.log("▶️ Video play detected");
-        setTimeout(() => checkCurrentVideo(), 800);
-    }
-}, true);
-
-// Grayscale
-function enableGrayscale() {
-    document.documentElement.classList.add('grayscale-mode');
-    grayscaleEnabled = true;
-}
-
-function disableGrayscale() {
-    document.documentElement.classList.remove('grayscale-mode');
-    grayscaleEnabled = false;
-}
-
-// YouTube Silencer
-function enableSilencer() {
-    if (window.youtubeObserver) return;
-
-    document.body.classList.add('silencer-active');
-    hideYouTubeDistractions();
-
-    const observer = new MutationObserver(hideYouTubeDistractions);
-    observer.observe(document.body, { childList: true, subtree: true });
-    window.youtubeObserver = observer;
-    silencerEnabled = true;
-
-    console.log("✅ YouTube Silencer enabled");
-}
-
-function disableSilencer() {
-    document.body.classList.remove('silencer-active');
-    if (window.youtubeObserver) {
-        window.youtubeObserver.disconnect();
-        window.youtubeObserver = null;
-    }
-    silencerEnabled = false;
-    console.log("❌ YouTube Silencer disabled");
-}
-
-function hideYouTubeDistractions() {
-    if (!silencerEnabled) return;
-
-    // Hide recommended videos sidebar
-    document.querySelectorAll('#secondary, #related').forEach(el => {
-        el.style.display = 'none';
+        console.log(`🎯 Mode: ${useAIMode ? 'AI (Premium)' : 'Keyword (Free)'}`);
     });
 
-    // Hide Shorts shelf
-    document.querySelectorAll('ytd-reel-shelf-renderer, ytd-rich-shelf-renderer[is-shorts]').forEach(el => {
-        el.style.display = 'none';
-    });
+    // Listener for real-time updates
+    chrome.runtime.onMessage.addListener((request) => {
+        if (request.action === "updateMode") {
+            if (request.key === "silencerMode") {
+                silencerEnabled = request.value;
+                request.value ? enableSilencer() : disableSilencer();
+            } else if (request.key === "grayscaleMode") {
+                grayscaleEnabled = request.value;
+                request.value ? enableGrayscale() : disableGrayscale();
+            } else if (request.key === "aiMonitor") {
+                aiMonitorEnabled = request.value;
+                if (request.value && currentGoal) {
+                    checkCurrentVideo();
+                }
+            }
+        } else if (request.action === "updateGoal") {
+            chrome.storage.local.get('currentGoal', (result) => {
+                currentGoal = result.currentGoal || "";
+                console.log("🎯 Goal updated to:", currentGoal);
 
-    // Hide comments
-    document.querySelectorAll('#comments, ytd-comments').forEach(el => {
-        el.style.display = 'none';
-    });
+                // Clear all processed flags so videos get re-checked
+                document.querySelectorAll('[data-goal-processed]').forEach(el => {
+                    delete el.dataset.goalProcessed;
+                });
+                console.log("🔄 Cleared all processed video flags");
 
-    // Blur home feed (when on homepage)
-    if (window.location.pathname === '/') {
-        document.querySelectorAll('ytd-rich-grid-renderer').forEach(el => {
-            el.style.filter = 'blur(8px)';
-            el.style.pointerEvents = 'none';
-        });
-    }
-}
-
-// ========== YOUTUBE PLATFORM SETTINGS ==========
-
-function applyYouTubeSettings() {
-    console.log("🎬 Applying YouTube settings:", youtubeSettings);
-
-    // Set up observer for dynamic content
-    if (!window.youtubeSettingsObserver) {
-        window.youtubeSettingsObserver = new MutationObserver(() => {
-            applyYouTubeBlocking();
-        });
-        window.youtubeSettingsObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    }
-
-    // Apply immediately
-    applyYouTubeBlocking();
-}
-
-function applyYouTubeBlocking() {
-    // BLOCK SHORTS
-    if (youtubeSettings.blockShorts) {
-        // Shorts shelf on homepage
-        hideElements('ytd-reel-shelf-renderer', 'Shorts Shelf');
-        hideElements('ytd-rich-shelf-renderer[is-shorts]', 'Shorts Rich Shelf');
-
-        // Shorts button in sidebar
-        hideElements('ytd-guide-entry-renderer a[href="/shorts"]', 'Shorts Button');
-        hideElements('ytd-mini-guide-entry-renderer a[href="/shorts"]', 'Shorts Mini Button');
-
-        // Individual shorts videos
-        hideElements('ytd-reel-video-renderer', 'Shorts Videos');
-
-        // Shorts tab on channel pages
-        hideElements('yt-tab-shape[tab-title="Shorts"]', 'Shorts Tab');
-    }
-
-    // BLOCK RECOMMENDATIONS (Sidebar on watch page)
-    if (youtubeSettings.blockRecommendations) {
-        hideElements('#secondary #related', 'Recommendations Sidebar');
-        hideElements('ytd-watch-next-secondary-results-renderer', 'Watch Next');
-    }
-
-    // BLOCK COMMENTS
-    if (youtubeSettings.blockComments) {
-        hideElements('#comments', 'Comments Section');
-        hideElements('ytd-comments', 'Comments');
-        hideElements('#comment-teaser', 'Comment Teaser');
-    }
-
-    // BLOCK HOME FEED
-    if (youtubeSettings.blockHomeFeed) {
-        if (window.location.pathname === '/' || window.location.pathname === '/feed/subscriptions') {
-            hideElements('ytd-rich-grid-renderer', 'Home Feed');
-            hideElements('ytd-browse[page-subtype="home"]', 'Home Page');
-            hideElements('ytd-browse[page-subtype="subscriptions"]', 'Subscriptions Feed');
+                if (aiMonitorEnabled && currentGoal) {
+                    checkedVideos.clear();
+                    console.log("✅ Re-checking with new goal...");
+                    checkCurrentVideo();
+                } else {
+                    console.warn("⚠️ Cannot check - AI Monitor:", aiMonitorEnabled, "Goal:", currentGoal);
+                }
+            });
+        } else if (request.action === "removeOverlay") {
+            removeGoalOverlay();
+        } else if (request.action === "platformSettingsUpdated" && request.platform === "youtube") {
+            youtubeSettings = request.settings;
+            console.log("🎬 YouTube settings updated:", youtubeSettings);
+            applyYouTubeSettings();
         }
-    }
-}
+    });
 
-function hideElements(selector, name) {
-    const elements = document.querySelectorAll(selector);
-    if (elements.length > 0) {
-        elements.forEach(el => {
-            el.style.display = 'none';
-        });
-        console.log(`✅ Blocked ${elements.length} ${name} element(s)`);
-    }
-}
+    // Watch for URL changes (YouTube is a SPA)
+    let lastUrl = location.href;
+    new MutationObserver(() => {
+        const url = location.href;
+        if (url !== lastUrl) {
+            lastUrl = url;
+            console.log("📍 YouTube navigation detected");
+            if (aiMonitorEnabled && currentGoal) {
+                setTimeout(() => checkCurrentVideo(), 1000);
+            }
+        }
+    }).observe(document, { subtree: true, childList: true });
 
-// ========== SMART GOAL CHECKING ==========
+    // FIX 1: Continuous browse monitoring (handles infinite scroll)
+    const browseObserver = new MutationObserver(() => {
+        if (!aiMonitorEnabled || !currentGoal) return;
 
-function checkCurrentVideo() {
-    if (!aiMonitorEnabled || !currentGoal) return;
+        const pathname = window.location.pathname;
+        if (
+            pathname === '/' ||
+            pathname.includes('/results') ||
+            pathname.includes('/feed')
+        ) {
+            checkBrowsePage();
+        }
+    });
 
-    const pathname = window.location.pathname;
+    browseObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 
-    // Watch page: Check the current video
-    if (pathname.includes('/watch')) {
-        checkWatchPage();
-    }
-    // Browse pages: Check all visible thumbnails
-    else if (pathname === '/' || pathname.includes('/results') || pathname.includes('/feed')) {
-        checkBrowsePage();
-    }
-}
-
-// Check video on watch page (show overlay if not relevant)
-function checkWatchPage() {
-    const videoId = new URLSearchParams(window.location.search).get('v');
-    if (!videoId) return;
-
-    if (checkedVideos.has(videoId) || whitelistedVideos.has(videoId)) {
-        console.log("✅ Video already checked or whitelisted");
-        return;
-    }
-
-    setTimeout(() => {
-        const videoData = extractVideoData();
-        if (!videoData) {
-            console.log("⏳ Video data not ready yet");
+    // FIX 2: Click interception (blocks clicks on blurred videos)
+    document.addEventListener('click', (e) => {
+        // Don't intercept if clicking the unblur button
+        if (e.target.classList.contains('unblur-btn')) {
             return;
         }
 
-        checkedVideos.add(videoId);
+        const anchor = e.target.closest('a#video-title');
+        if (!anchor) return;
 
-        // Choose checking method based on user's tier
-        if (useAIMode && authToken) {
-            checkWithAI(videoData);
-        } else {
-            checkWithKeywords(videoData);
+        const renderer = anchor.closest(
+            'ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer'
+        );
+
+        if (!renderer) return;
+
+        // If video is blurred (check for pointer-events: none)
+        if (renderer.style.pointerEvents === 'none') {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const title = anchor.textContent.trim();
+            const channel =
+                renderer.querySelector('#channel-name a')?.textContent.trim() || '';
+
+            showGoalOverlay({
+                title,
+                channel,
+                description: '',
+                metaDesc: '',
+                metaKeywords: '',
+                url: anchor.href
+            }, 'keyword');
+
+            console.log("🚫 Blocked off-track video click:", title);
         }
-    }, 1500);
-}
+    }, true);
 
-// Check thumbnails on browse pages (blur non-relevant videos)
-function checkBrowsePage() {
-    console.log("🔍 Checking browse page...");
-    console.log("  - AI Monitor:", aiMonitorEnabled);
-    console.log("  - Goal:", currentGoal);
+    // FIX 3: Video play detection (catches autoplay)
+    document.addEventListener('play', (e) => {
+        if (e.target.tagName === 'VIDEO') {
+            console.log("▶️ Video play detected");
+            setTimeout(() => checkCurrentVideo(), 800);
+        }
+    }, true);
 
-    if (!aiMonitorEnabled || !currentGoal) {
-        console.warn("⚠️ Skipping browse check - AI Monitor or Goal missing");
-        return;
+    // Grayscale
+    function enableGrayscale() {
+        document.documentElement.classList.add('grayscale-mode');
+        grayscaleEnabled = true;
     }
 
-    // Get all video renderers
-    const videoRenderers = document.querySelectorAll('ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer');
-    console.log(`  - Found ${videoRenderers.length} video thumbnails`);
+    function disableGrayscale() {
+        document.documentElement.classList.remove('grayscale-mode');
+        grayscaleEnabled = false;
+    }
 
-    videoRenderers.forEach(renderer => {
-        // Temporarily disabled - process all videos every time
-        // TODO: Re-enable with smarter logic later
-        // if (renderer.dataset.goalProcessed === 'true') {
-        //     return;
-        // }
+    // YouTube Silencer
+    function enableSilencer() {
+        if (window.youtubeObserver) return;
 
-        // Extract title from thumbnail
-        const titleElement = renderer.querySelector('#video-title');
-        const title = titleElement?.textContent?.trim() || "";
-        const channelElement = renderer.querySelector('#channel-name a, .ytd-channel-name a');
-        const channel = channelElement?.textContent?.trim() || "";
+        document.body.classList.add('silencer-active');
+        hideYouTubeDistractions();
 
-        if (!title) return;
+        const observer = new MutationObserver(hideYouTubeDistractions);
+        observer.observe(document.body, { childList: true, subtree: true });
+        window.youtubeObserver = observer;
+        silencerEnabled = true;
 
-        console.log(`🔍 Checking: ${title.substring(0, 50)}...`);
+        console.log("✅ YouTube Silencer enabled");
+    }
 
-        const videoData = { title, channel, description: "", metaDesc: "", metaKeywords: "", url: "" };
-        const isRelevant = checkGoalRelevance(videoData);
+    function disableSilencer() {
+        document.body.classList.remove('silencer-active');
+        if (window.youtubeObserver) {
+            window.youtubeObserver.disconnect();
+            window.youtubeObserver = null;
+        }
+        silencerEnabled = false;
+        console.log("❌ YouTube Silencer disabled");
+    }
 
-        if (!isRelevant) {
-            console.log(`❌ Marking as off-track: ${title}`);
+    function hideYouTubeDistractions() {
+        if (!silencerEnabled) return;
 
-            // Find and blur ONLY the thumbnail
-            const thumbnail = renderer.querySelector('ytd-thumbnail, #thumbnail');
-            if (thumbnail) {
-                thumbnail.style.filter = 'blur(12px) grayscale(100%)';
-                thumbnail.style.transition = 'filter 0.3s';
+        // Hide recommended videos sidebar
+        document.querySelectorAll('#secondary, #related').forEach(el => {
+            el.style.display = 'none';
+        });
+
+        // Hide Shorts shelf
+        document.querySelectorAll('ytd-reel-shelf-renderer, ytd-rich-shelf-renderer[is-shorts]').forEach(el => {
+            el.style.display = 'none';
+        });
+
+        // Hide comments
+        document.querySelectorAll('#comments, ytd-comments').forEach(el => {
+            el.style.display = 'none';
+        });
+
+        // Blur home feed (when on homepage)
+        if (window.location.pathname === '/') {
+            document.querySelectorAll('ytd-rich-grid-renderer').forEach(el => {
+                el.style.filter = 'blur(8px)';
+                el.style.pointerEvents = 'none';
+            });
+        }
+    }
+
+    // ========== YOUTUBE PLATFORM SETTINGS ==========
+
+    function applyYouTubeSettings() {
+        console.log("🎬 Applying YouTube settings:", youtubeSettings);
+
+        // Set up observer for dynamic content
+        if (!window.youtubeSettingsObserver) {
+            window.youtubeSettingsObserver = new MutationObserver(() => {
+                applyYouTubeBlocking();
+            });
+            window.youtubeSettingsObserver.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        }
+
+        // Apply immediately
+        applyYouTubeBlocking();
+    }
+
+    function applyYouTubeBlocking() {
+        // BLOCK SHORTS
+        if (youtubeSettings.blockShorts) {
+            // Shorts shelf on homepage
+            hideElements('ytd-reel-shelf-renderer', 'Shorts Shelf');
+            hideElements('ytd-rich-shelf-renderer[is-shorts]', 'Shorts Rich Shelf');
+
+            // Shorts button in sidebar
+            hideElements('ytd-guide-entry-renderer a[href="/shorts"]', 'Shorts Button');
+            hideElements('ytd-mini-guide-entry-renderer a[href="/shorts"]', 'Shorts Mini Button');
+
+            // Individual shorts videos
+            hideElements('ytd-reel-video-renderer', 'Shorts Videos');
+
+            // Shorts tab on channel pages
+            hideElements('yt-tab-shape[tab-title="Shorts"]', 'Shorts Tab');
+        }
+
+        // BLOCK RECOMMENDATIONS (Sidebar on watch page)
+        if (youtubeSettings.blockRecommendations) {
+            hideElements('#secondary #related', 'Recommendations Sidebar');
+            hideElements('ytd-watch-next-secondary-results-renderer', 'Watch Next');
+        }
+
+        // BLOCK COMMENTS
+        if (youtubeSettings.blockComments) {
+            hideElements('#comments', 'Comments Section');
+            hideElements('ytd-comments', 'Comments');
+            hideElements('#comment-teaser', 'Comment Teaser');
+        }
+
+        // BLOCK HOME FEED
+        if (youtubeSettings.blockHomeFeed) {
+            if (window.location.pathname === '/' || window.location.pathname === '/feed/subscriptions') {
+                hideElements('ytd-rich-grid-renderer', 'Home Feed');
+                hideElements('ytd-browse[page-subtype="home"]', 'Home Page');
+                hideElements('ytd-browse[page-subtype="subscriptions"]', 'Subscriptions Feed');
+            }
+        }
+    }
+
+    function hideElements(selector, name) {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+            elements.forEach(el => {
+                el.style.display = 'none';
+            });
+            console.log(`✅ Blocked ${elements.length} ${name} element(s)`);
+        }
+    }
+
+    // ========== SMART GOAL CHECKING ==========
+
+    function checkCurrentVideo() {
+        if (!aiMonitorEnabled || !currentGoal) return;
+
+        const pathname = window.location.pathname;
+
+        // Watch page: Check the current video
+        if (pathname.includes('/watch')) {
+            checkWatchPage();
+        }
+        // Browse pages: Check all visible thumbnails
+        else if (pathname === '/' || pathname.includes('/results') || pathname.includes('/feed')) {
+            checkBrowsePage();
+        }
+    }
+
+    // Check video on watch page (show overlay if not relevant)
+    function checkWatchPage() {
+        const videoId = new URLSearchParams(window.location.search).get('v');
+        if (!videoId) return;
+
+        if (checkedVideos.has(videoId) || whitelistedVideos.has(videoId)) {
+            console.log("✅ Video already checked or whitelisted");
+            return;
+        }
+
+        setTimeout(() => {
+            const videoData = extractVideoData();
+            if (!videoData) {
+                console.log("⏳ Video data not ready yet");
+                return;
             }
 
-            // Dim the metadata (title, channel, etc.) but keep readable
-            const metadata = renderer.querySelector('#details, #meta');
-            if (metadata) {
-                metadata.style.opacity = '0.4';
-                metadata.style.transition = 'opacity 0.3s';
+            checkedVideos.add(videoId);
+
+            // Choose checking method: AI Monitor has priority if enabled
+            if (aiMonitorEnabled && window.aiMonitor) {
+                checkWithAI(videoData);
+            } else if (useAIMode && authToken) {
+                checkWithAI(videoData);
+            } else {
+                checkWithKeywords(videoData);
             }
+        }, 1500);
+    }
 
-            // Block clicks on the entire video
-            renderer.style.pointerEvents = 'none';
-            renderer.style.position = 'relative';
+    // Check thumbnails on browse pages (blur non-relevant videos ONLY in keyword mode)
+    function checkBrowsePage() {
+        // If AI Monitor is on, we let the page-level AI scan handle it (requested: "no free features works when ai monitor is on")
+        if (aiMonitorEnabled) {
+            console.log("🤖 YouTube: AI Monitor active, skipping thumbnail blurring");
+            return;
+        }
 
-            // Add warning label
-            if (!renderer.querySelector('.off-track-label')) {
-                const label = document.createElement('div');
-                label.className = 'off-track-label';
-                label.style.cssText = `
+        console.log("🔍 Checking browse page...");
+        console.log("  - AI Monitor:", aiMonitorEnabled);
+        console.log("  - Goal:", currentGoal);
+
+        if (!aiMonitorEnabled || !currentGoal) {
+            console.warn("⚠️ Skipping browse check - AI Monitor or Goal missing");
+            return;
+        }
+
+        // Get all video renderers
+        const videoRenderers = document.querySelectorAll('ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer');
+        console.log(`  - Found ${videoRenderers.length} video thumbnails`);
+
+        videoRenderers.forEach(renderer => {
+            // Temporarily disabled - process all videos every time
+            // TODO: Re-enable with smarter logic later
+            // if (renderer.dataset.goalProcessed === 'true') {
+            //     return;
+            // }
+
+            // Extract title from thumbnail
+            const titleElement = renderer.querySelector('#video-title');
+            const title = titleElement?.textContent?.trim() || "";
+            const channelElement = renderer.querySelector('#channel-name a, .ytd-channel-name a');
+            const channel = channelElement?.textContent?.trim() || "";
+
+            if (!title) return;
+
+            console.log(`🔍 Checking: ${title.substring(0, 50)}...`);
+
+            const videoData = { title, channel, description: "", metaDesc: "", metaKeywords: "", url: "" };
+            const isRelevant = checkGoalRelevance(videoData);
+
+            if (!isRelevant) {
+                console.log(`❌ Marking as off-track: ${title}`);
+
+                // Find and blur ONLY the thumbnail
+                const thumbnail = renderer.querySelector('ytd-thumbnail, #thumbnail');
+                if (thumbnail) {
+                    thumbnail.style.filter = 'blur(12px) grayscale(100%)';
+                    thumbnail.style.transition = 'filter 0.3s';
+                }
+
+                // Dim the metadata (title, channel, etc.) but keep readable
+                const metadata = renderer.querySelector('#details, #meta');
+                if (metadata) {
+                    metadata.style.opacity = '0.4';
+                    metadata.style.transition = 'opacity 0.3s';
+                }
+
+                // Block clicks on the entire video
+                renderer.style.pointerEvents = 'none';
+                renderer.style.position = 'relative';
+
+                // Add warning label
+                if (!renderer.querySelector('.off-track-label')) {
+                    const label = document.createElement('div');
+                    label.className = 'off-track-label';
+                    label.style.cssText = `
                     position: absolute;
                     top: 10px;
                     left: 10px;
@@ -424,16 +433,16 @@ function checkBrowsePage() {
                     pointer-events: none;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
                 `;
-                label.textContent = '⚠️ Off-Track';
-                renderer.appendChild(label);
-                console.log("  ✅ Added label");
-            }
+                    label.textContent = '⚠️ Off-Track';
+                    renderer.appendChild(label);
+                    console.log("  ✅ Added label");
+                }
 
-            // Add unblur button (NOT inside blurred area!)
-            if (!renderer.querySelector('.unblur-btn')) {
-                const unblurBtn = document.createElement('button');
-                unblurBtn.className = 'unblur-btn';
-                unblurBtn.style.cssText = `
+                // Add unblur button (NOT inside blurred area!)
+                if (!renderer.querySelector('.unblur-btn')) {
+                    const unblurBtn = document.createElement('button');
+                    unblurBtn.className = 'unblur-btn';
+                    unblurBtn.style.cssText = `
                     position: absolute;
                     bottom: 10px;
                     left: 50%;
@@ -451,221 +460,189 @@ function checkBrowsePage() {
                     z-index: 101;
                     transition: all 0.3s;
                 `;
-                unblurBtn.textContent = '✓ This is Related';
+                    unblurBtn.textContent = '✓ This is Related';
 
-                // Hover effect
-                unblurBtn.addEventListener('mouseenter', () => {
-                    unblurBtn.style.transform = 'translateX(-50%) scale(1.05)';
-                    unblurBtn.style.boxShadow = '0 6px 16px rgba(76, 175, 80, 0.5)';
-                });
-                unblurBtn.addEventListener('mouseleave', () => {
-                    unblurBtn.style.transform = 'translateX(-50%) scale(1)';
-                    unblurBtn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
-                });
+                    // Hover effect
+                    unblurBtn.addEventListener('mouseenter', () => {
+                        unblurBtn.style.transform = 'translateX(-50%) scale(1.05)';
+                        unblurBtn.style.boxShadow = '0 6px 16px rgba(76, 175, 80, 0.5)';
+                    });
+                    unblurBtn.addEventListener('mouseleave', () => {
+                        unblurBtn.style.transform = 'translateX(-50%) scale(1)';
+                        unblurBtn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+                    });
 
-                // Click to unblur & LEARN
-                unblurBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                    // Click to unblur & LEARN
+                    unblurBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
 
-                    console.log(`✅ User marked as relevant: "${title}"`);
+                        console.log(`✅ User marked as relevant: "${title}"`);
 
-                    // 1. Unblur UI
-                    if (thumbnail) thumbnail.style.filter = 'none';
-                    if (metadata) metadata.style.opacity = '1';
-                    renderer.style.pointerEvents = 'auto';
-                    const label = renderer.querySelector('.off-track-label');
-                    if (label) label.remove();
-                    unblurBtn.remove();
-                    renderer.removeEventListener('mouseenter', hoverHandler);
-                    renderer.removeEventListener('mouseleave', leaveHandler);
+                        // 1. Unblur UI
+                        if (thumbnail) thumbnail.style.filter = 'none';
+                        if (metadata) metadata.style.opacity = '1';
+                        renderer.style.pointerEvents = 'auto';
+                        const label = renderer.querySelector('.off-track-label');
+                        if (label) label.remove();
+                        unblurBtn.remove();
+                        renderer.removeEventListener('mouseenter', hoverHandler);
+                        renderer.removeEventListener('mouseleave', leaveHandler);
 
-                    // 2. LEARN: Extract keywords for THIS goal
-                    const titleWords = title.toLowerCase()
-                        .replace(/[^a-z0-9 ]/g, "")
-                        .split(' ')
-                        .filter(w => w.length > 3);
+                        // 2. LEARN: Extract keywords for THIS goal
+                        const titleWords = title.toLowerCase()
+                            .replace(/[^a-z0-9 ]/g, "")
+                            .split(' ')
+                            .filter(w => w.length > 3);
 
-                    console.log(`📚 Learning from feedback for goal "${currentGoal}":`, titleWords);
+                        console.log(`📚 Learning from feedback for goal "${currentGoal}":`, titleWords);
 
-                    // Initialize list for this goal if missing
-                    const goalKey = currentGoal.toLowerCase().trim();
-                    if (!learnedKeywords[goalKey]) {
-                        learnedKeywords[goalKey] = [];
-                    }
+                        // Initialize list for this goal if missing
+                        const goalKey = currentGoal.toLowerCase().trim();
+                        if (!learnedKeywords[goalKey]) {
+                            learnedKeywords[goalKey] = [];
+                        }
 
-                    // Add new unique keywords
-                    const existing = learnedKeywords[goalKey];
-                    const newKeywords = titleWords.filter(w => !existing.includes(w));
+                        // Add new unique keywords
+                        const existing = learnedKeywords[goalKey];
+                        const newKeywords = titleWords.filter(w => !existing.includes(w));
 
-                    if (newKeywords.length > 0) {
-                        learnedKeywords[goalKey].push(...newKeywords);
-                        chrome.storage.local.set({ learnedKeywords }, () => {
-                            console.log(`💾 Saved ${newKeywords.length} new terms for "${goalKey}":`, newKeywords);
-                            // IMMEDIATE UPDATE: Re-scan the whole page to unblur other matching videos!
-                            console.log("🔄 Triggering immediate page re-scan...");
+                        if (newKeywords.length > 0) {
+                            learnedKeywords[goalKey].push(...newKeywords);
+                            chrome.storage.local.set({ learnedKeywords }, () => {
+                                console.log(`💾 Saved ${newKeywords.length} new terms for "${goalKey}":`, newKeywords);
+                                // IMMEDIATE UPDATE: Re-scan the whole page to unblur other matching videos!
+                                console.log("🔄 Triggering immediate page re-scan...");
+                                checkBrowsePage();
+                            });
+                        } else {
+                            // Even if no new unique words (rare), re-check just in case
                             checkBrowsePage();
-                        });
-                    } else {
-                        // Even if no new unique words (rare), re-check just in case
-                        checkBrowsePage();
-                    }
-                });
+                        }
+                    });
 
-                renderer.appendChild(unblurBtn);
-                console.log("  ✅ Added unblur button");
-            }
-
-            // Hover to preview (unblur temporarily)
-            const hoverHandler = () => {
-                if (thumbnail) {
-                    thumbnail.style.filter = 'blur(0px) grayscale(0%)';
+                    renderer.appendChild(unblurBtn);
+                    console.log("  ✅ Added unblur button");
                 }
+
+                // Hover to preview (unblur temporarily)
+                const hoverHandler = () => {
+                    if (thumbnail) {
+                        thumbnail.style.filter = 'blur(0px) grayscale(0%)';
+                    }
+                    if (metadata) {
+                        metadata.style.opacity = '1';
+                    }
+                };
+
+                const leaveHandler = () => {
+                    if (thumbnail) {
+                        thumbnail.style.filter = 'blur(12px) grayscale(100%)';
+                    }
+                    if (metadata) {
+                        metadata.style.opacity = '0.4';
+                    }
+                };
+
+                renderer.addEventListener('mouseenter', hoverHandler);
+                renderer.addEventListener('mouseleave', leaveHandler);
+            } else {
+                console.log(`✅ Relevant: ${title}`);
+
+                // CLEANUP: If video was previously blurred, unblur it now!
+                const thumbnail = renderer.querySelector('ytd-thumbnail, #thumbnail');
+                if (thumbnail) {
+                    thumbnail.style.filter = 'none';
+                    thumbnail.style.transition = 'filter 0.3s';
+                }
+
+                const metadata = renderer.querySelector('#details, #meta');
                 if (metadata) {
                     metadata.style.opacity = '1';
+                    metadata.style.transition = 'opacity 0.3s';
                 }
-            };
 
-            const leaveHandler = () => {
-                if (thumbnail) {
-                    thumbnail.style.filter = 'blur(12px) grayscale(100%)';
-                }
-                if (metadata) {
-                    metadata.style.opacity = '0.4';
-                }
-            };
+                renderer.style.pointerEvents = 'auto';
+                renderer.style.position = '';
 
-            renderer.addEventListener('mouseenter', hoverHandler);
-            renderer.addEventListener('mouseleave', leaveHandler);
-        } else {
-            console.log(`✅ Relevant: ${title}`);
+                const label = renderer.querySelector('.off-track-label');
+                if (label) label.remove();
 
-            // CLEANUP: If video was previously blurred, unblur it now!
-            const thumbnail = renderer.querySelector('ytd-thumbnail, #thumbnail');
-            if (thumbnail) {
-                thumbnail.style.filter = 'none';
-                thumbnail.style.transition = 'filter 0.3s';
+                const unblurBtn = renderer.querySelector('.unblur-btn');
+                if (unblurBtn) unblurBtn.remove();
             }
-
-            const metadata = renderer.querySelector('#details, #meta');
-            if (metadata) {
-                metadata.style.opacity = '1';
-                metadata.style.transition = 'opacity 0.3s';
-            }
-
-            renderer.style.pointerEvents = 'auto';
-            renderer.style.position = '';
-
-            const label = renderer.querySelector('.off-track-label');
-            if (label) label.remove();
-
-            const unblurBtn = renderer.querySelector('.unblur-btn');
-            if (unblurBtn) unblurBtn.remove();
-        }
-    });
-}
-
-// FREE TIER: Keyword-based checking (works offline)
-function checkWithKeywords(videoData) {
-    const isRelevant = checkGoalRelevance(videoData);
-
-    console.log("🎯 Keyword Check Result:", isRelevant ? "✅ RELEVANT" : "❌ NOT RELEVANT");
-
-    if (!isRelevant) {
-        showGoalOverlay(videoData, 'keyword');
-    }
-}
-
-// PREMIUM TIER: AI-based checking
-// Delegates entirely to content/ai/ai-monitor.js — no API keys here.
-async function checkWithAI(videoData) {
-    // Guard: ai-monitor.js might not be injected yet (non-premium users)
-    if (!window.aiMonitor?.isAvailable()) {
-        console.warn("⚠️ AI Monitor not available — falling back to keyword mode");
-        checkWithKeywords(videoData);
-        return;
-    }
-
-    try {
-        console.log("🤖 AI Monitor checking:", videoData.title?.slice(0, 50));
-
-        const result = await window.aiMonitor.checkContent({
-            goal: currentGoal,
-            title: videoData.title,
-            channel: videoData.channel,
-            description: videoData.description
         });
+    }
 
-        console.log("🤖 AI Result:", result.isRelevant ? "✅ RELEVANT" : "❌ NOT RELEVANT");
-        console.log("📊 Confidence:", result.confidence, "| From cache:", result.fromCache);
-        if (result.reasoning) console.log("💭 Reasoning:", result.reasoning);
-        if (result.remainingScans !== undefined) console.log("🔢 Remaining scans today:", result.remainingScans);
+    // FREE TIER: Keyword-based checking (works offline)
+    function checkWithKeywords(videoData) {
+        const isRelevant = checkGoalRelevance(videoData);
 
-        if (!result.isRelevant) {
-            showGoalOverlay(videoData, 'ai', result);
+        console.log("🎯 Keyword Check Result:", isRelevant ? "✅ RELEVANT" : "❌ NOT RELEVANT");
+
+        if (!isRelevant) {
+            showGoalOverlay(videoData, 'keyword');
+        }
+    }
+
+    // PREMIUM TIER: AI-based checking
+    // Delegates to content/ai/ai-monitor.js — this file stays clean.
+    async function checkWithAI(videoData) {
+        if (!window.aiMonitor) {
+            console.warn('[YouTube] ai-monitor.js not loaded — falling back to keywords');
+            checkWithKeywords(videoData);
+            return;
         }
 
-    } catch (error) {
-        if (error.message === 'AUTH_EXPIRED') {
-            console.warn("🔒 Session expired — please log in again");
-            useAIMode = false;
-            checkWithKeywords(videoData);
-        } else if (error.message === 'NOT_PREMIUM') {
-            console.warn("⭐ Premium required for AI Monitor");
-            showUpgradePrompt();
-            checkWithKeywords(videoData);
-        } else if (error.message?.startsWith('LIMIT_REACHED')) {
-            const resetsAt = error.message.split(':')[1];
-            console.warn("⏳ Daily AI scan limit reached. Resets at:", resetsAt);
-            checkWithKeywords(videoData); // Graceful fallback
-        } else {
-            console.error("AI Monitor error:", error.message);
-            console.log("⚠️ Falling back to keyword mode");
+        const { used, error } = await window.aiMonitor.checkAndBlock(currentGoal, videoData);
+
+        if (!used) {
+            // Not premium or no token — silent fallback
+            console.warn('[YouTube] AI not available, reason:', error || 'not premium');
             checkWithKeywords(videoData);
         }
     }
-}
 
-function extractVideoData() {
-    const titleElement = document.querySelector('h1.ytd-video-primary-info-renderer, h1.title yt-formatted-string');
-    const title = titleElement?.innerText || "";
+    function extractVideoData() {
+        const titleElement = document.querySelector('h1.ytd-video-primary-info-renderer, h1.title yt-formatted-string');
+        const title = titleElement?.innerText || "";
 
-    const descElement = document.querySelector('#description-inline-expander, ytd-text-inline-expander');
-    const description = descElement?.innerText || "";
+        const descElement = document.querySelector('#description-inline-expander, ytd-text-inline-expander');
+        const description = descElement?.innerText || "";
 
-    const channelElement = document.querySelector('#channel-name a, ytd-channel-name a');
-    const channel = channelElement?.innerText || "";
+        const channelElement = document.querySelector('#channel-name a, ytd-channel-name a');
+        const channel = channelElement?.innerText || "";
 
-    const metaDesc = document.querySelector('meta[name="description"]')?.content || "";
-    const metaKeywords = document.querySelector('meta[name="keywords"]')?.content || "";
+        const metaDesc = document.querySelector('meta[name="description"]')?.content || "";
+        const metaKeywords = document.querySelector('meta[name="keywords"]')?.content || "";
 
-    if (!title) return null;
+        if (!title) return null;
 
-    return {
-        title,
-        description,
-        channel,
-        metaDesc,
-        metaKeywords,
-        url: window.location.href
-    };
-}
+        return {
+            title,
+            description,
+            channel,
+            metaDesc,
+            metaKeywords,
+            url: window.location.href
+        };
+    }
 
-// ========== SMART GOAL CHECKING WITH ADAPTIVE LEARNING ==========
-// Strategy: content/platforms/youtube.js
+    // ========== SMART GOAL CHECKING WITH ADAPTIVE LEARNING ==========
+    // Strategy: content/platforms/youtube.js
 
-function checkGoalRelevance(videoData) {
-    const stopWords = ['and', 'for', 'the', 'with', 'how', 'to', 'in', 'on', 'at', 'a', 'an', 'is', 'are', 'be', 'of', 'video', 'watch'];
+    function checkGoalRelevance(videoData) {
+        const stopWords = ['and', 'for', 'the', 'with', 'how', 'to', 'in', 'on', 'at', 'a', 'an', 'is', 'are', 'be', 'of', 'video', 'watch'];
 
-    // 1. Clean and tokenize the current goal
-    const goalKeywords = currentGoal
-        .toLowerCase()
-        .replace(/[^a-z0-9 ]/g, "")
-        .split(" ")
-        .filter(w => w.length >= 2 && !stopWords.includes(w));
+        // 1. Clean and tokenize the current goal
+        const goalKeywords = currentGoal
+            .toLowerCase()
+            .replace(/[^a-z0-9 ]/g, "")
+            .split(" ")
+            .filter(w => w.length >= 2 && !stopWords.includes(w));
 
-    // 2. Prepare video context
-    const videoContext = `
+        // 2. Prepare video context
+        const videoContext = `
         ${videoData.title}
         ${videoData.description}
         ${videoData.channel}
@@ -673,91 +650,91 @@ function checkGoalRelevance(videoData) {
         ${videoData.metaKeywords}
     `.toLowerCase();
 
-    // 3. Get adaptive keywords for THIS specific goal
-    const goalKey = currentGoal.toLowerCase().trim();
-    // Default to empty list if no keywords learned for this goal yet
-    const adaptiveKeywords = (learnedKeywords && learnedKeywords[goalKey]) ? learnedKeywords[goalKey] : [];
+        // 3. Get adaptive keywords for THIS specific goal
+        const goalKey = currentGoal.toLowerCase().trim();
+        // Default to empty list if no keywords learned for this goal yet
+        const adaptiveKeywords = (learnedKeywords && learnedKeywords[goalKey]) ? learnedKeywords[goalKey] : [];
 
-    console.log("🔍 Goal:", currentGoal);
-    console.log("📚 Known Keywords:", goalKeywords);
-    console.log("🧠 Learned Context:", adaptiveKeywords);
-    console.log("📄 Video Title:", videoData.title);
+        console.log("🔍 Goal:", currentGoal);
+        console.log("📚 Known Keywords:", goalKeywords);
+        console.log("🧠 Learned Context:", adaptiveKeywords);
+        console.log("📄 Video Title:", videoData.title);
 
-    // Strategy A: Exact Goal Match
-    const exactMatch = goalKeywords.some(keyword => videoContext.includes(keyword));
-    if (exactMatch) {
-        console.log("✅ RELEVANT (Direct goal match)");
-        return true;
-    }
-
-    // Strategy B: Learned Concept Match (The "Knapsack" Fix)
-    // If the video contains a keyword we previously learned is related to this goal
-    if (adaptiveKeywords.length > 0) {
-        const learnedMatch = adaptiveKeywords.some(keyword => videoContext.includes(keyword));
-        if (learnedMatch) {
-            console.log("✅ RELEVANT (Adaptive learning match)");
+        // Strategy A: Exact Goal Match
+        const exactMatch = goalKeywords.some(keyword => videoContext.includes(keyword));
+        if (exactMatch) {
+            console.log("✅ RELEVANT (Direct goal match)");
             return true;
         }
-    }
 
-    // Strategy C: Fuzzy Matching (Typos/Plurals)
-    const videoWords = videoContext.split(/\s+/).filter(w => w.length >= 3);
-    const fuzzyMatch = goalKeywords.some(gk => {
-        if (gk.length >= 3) {
-            return videoWords.some(vw =>
-                vw.includes(gk) || gk.includes(vw) ||
-                (vw.length >= 4 && gk.length >= 4 && vw.substring(0, 3) === gk.substring(0, 3))
-            );
-        }
-        return false;
-    });
-
-    if (fuzzyMatch) {
-        console.log("✅ RELEVANT (Fuzzy match)");
-        return true;
-    }
-
-    // Strategy D: Broad Educational Check (Learning Mode)
-    const learningKeywords = ['learn', 'tutorial', 'course', 'study', 'guide', 'explained', 'roadmap'];
-    const isLearningGoal = learningKeywords.some(k => currentGoal.toLowerCase().includes(k));
-
-    if (isLearningGoal) {
-        const educationalIndicators = ['tutorial', 'course', 'learn', 'guide', 'explained', 'introduction', 'beginner', 'complete'];
-        const hasEducationalContent = educationalIndicators.some(ind => videoContext.includes(ind));
-
-        if (hasEducationalContent) {
-            // If it's educational, be more lenient with partial matches
-            const titleWords = videoData.title.toLowerCase()
-                .replace(/[^a-z0-9 ]/g, "")
-                .split(" ")
-                .filter(w => w.length >= 3 && !stopWords.includes(w));
-
-            const sharedWords = titleWords.filter(tw =>
-                goalKeywords.some(gk => tw.includes(gk) || gk.includes(tw))
-            );
-
-            if (sharedWords.length > 0) {
-                console.log("✅ RELEVANT (Broad educational match)");
+        // Strategy B: Learned Concept Match (The "Knapsack" Fix)
+        // If the video contains a keyword we previously learned is related to this goal
+        if (adaptiveKeywords.length > 0) {
+            const learnedMatch = adaptiveKeywords.some(keyword => videoContext.includes(keyword));
+            if (learnedMatch) {
+                console.log("✅ RELEVANT (Adaptive learning match)");
                 return true;
             }
         }
+
+        // Strategy C: Fuzzy Matching (Typos/Plurals)
+        const videoWords = videoContext.split(/\s+/).filter(w => w.length >= 3);
+        const fuzzyMatch = goalKeywords.some(gk => {
+            if (gk.length >= 3) {
+                return videoWords.some(vw =>
+                    vw.includes(gk) || gk.includes(vw) ||
+                    (vw.length >= 4 && gk.length >= 4 && vw.substring(0, 3) === gk.substring(0, 3))
+                );
+            }
+            return false;
+        });
+
+        if (fuzzyMatch) {
+            console.log("✅ RELEVANT (Fuzzy match)");
+            return true;
+        }
+
+        // Strategy D: Broad Educational Check (Learning Mode)
+        const learningKeywords = ['learn', 'tutorial', 'course', 'study', 'guide', 'explained', 'roadmap'];
+        const isLearningGoal = learningKeywords.some(k => currentGoal.toLowerCase().includes(k));
+
+        if (isLearningGoal) {
+            const educationalIndicators = ['tutorial', 'course', 'learn', 'guide', 'explained', 'introduction', 'beginner', 'complete'];
+            const hasEducationalContent = educationalIndicators.some(ind => videoContext.includes(ind));
+
+            if (hasEducationalContent) {
+                // If it's educational, be more lenient with partial matches
+                const titleWords = videoData.title.toLowerCase()
+                    .replace(/[^a-z0-9 ]/g, "")
+                    .split(" ")
+                    .filter(w => w.length >= 3 && !stopWords.includes(w));
+
+                const sharedWords = titleWords.filter(tw =>
+                    goalKeywords.some(gk => tw.includes(gk) || gk.includes(tw))
+                );
+
+                if (sharedWords.length > 0) {
+                    console.log("✅ RELEVANT (Broad educational match)");
+                    return true;
+                }
+            }
+        }
+
+        console.log("❌ NOT RELEVANT (No matching concepts found)");
+        return false;
     }
 
-    console.log("❌ NOT RELEVANT (No matching concepts found)");
-    return false;
-}
+    function showGoalOverlay(videoData, mode = 'keyword', aiResult = null) {
+        removeGoalOverlay();
 
-function showGoalOverlay(videoData, mode = 'keyword', aiResult = null) {
-    removeGoalOverlay();
-
-    const overlay = document.createElement('div');
-    overlay.id = 'youtube-goal-overlay';
-    overlay.style.cssText = `
+        const overlay = document.createElement('div');
+        overlay.id = 'youtube-goal-overlay';
+        overlay.style.cssText = `
         position: fixed;
-        top: 0;
+        top: 56px;
         left: 0;
         width: 100vw;
-        height: 100vh;
+        height: calc(100vh - 56px);
         background: rgba(0, 0, 0, 0.85);
         backdrop-filter: blur(15px);
         -webkit-backdrop-filter: blur(15px);
@@ -769,10 +746,10 @@ function showGoalOverlay(videoData, mode = 'keyword', aiResult = null) {
         font-family: 'Roboto', sans-serif;
     `;
 
-    const modeLabel = mode === 'ai' ? '🤖 AI Analysis' : '🔍 Keyword Match';
-    const reasoning = aiResult?.reasoning || 'Video content doesn\'t match your goal keywords';
+        const modeLabel = mode === 'ai' ? '🤖 AI Analysis' : '🔍 Keyword Match';
+        const reasoning = aiResult?.reasoning || 'Video content doesn\'t match your goal keywords';
 
-    overlay.innerHTML = `
+        overlay.innerHTML = `
         <div style="background: rgba(30, 30, 30, 0.95); padding: 50px; border-radius: 20px; text-align: center; border: 1px solid #444; max-width: 600px;">
             <div style="font-size: 0.9rem; color: #888; margin-bottom: 10px;">${modeLabel}</div>
             <h1 style="font-size: 2rem; margin: 0 0 15px 0; color: #ff6b6b;">⚠️ Off-Track Alert</h1>
@@ -834,34 +811,34 @@ function showGoalOverlay(videoData, mode = 'keyword', aiResult = null) {
         </div>
     `;
 
-    document.body.appendChild(overlay);
+        document.body.appendChild(overlay);
 
-    document.getElementById('btn-go-back').addEventListener('click', () => {
-        window.history.back();
-    });
-
-    document.getElementById('btn-this-is-related').addEventListener('click', () => {
-        const videoId = new URLSearchParams(window.location.search).get('v');
-        if (videoId) {
-            whitelistedVideos.add(videoId);
-            console.log("✅ Video whitelisted:", videoId);
-        }
-        removeGoalOverlay();
-    });
-
-    if (mode === 'keyword' && !useAIMode) {
-        document.getElementById('btn-upgrade')?.addEventListener('click', () => {
-            chrome.runtime.sendMessage({ action: 'openUpgradePage' });
+        document.getElementById('btn-go-back').addEventListener('click', () => {
+            window.history.back();
         });
+
+        document.getElementById('btn-this-is-related').addEventListener('click', () => {
+            const videoId = new URLSearchParams(window.location.search).get('v');
+            if (videoId) {
+                whitelistedVideos.add(videoId);
+                console.log("✅ Video whitelisted:", videoId);
+            }
+            removeGoalOverlay();
+        });
+
+        if (mode === 'keyword' && !useAIMode) {
+            document.getElementById('btn-upgrade')?.addEventListener('click', () => {
+                chrome.runtime.sendMessage({ action: 'openUpgradePage' });
+            });
+        }
+
+        const video = document.querySelector('video');
+        if (video) video.pause();
     }
 
-    const video = document.querySelector('video');
-    if (video) video.pause();
-}
-
-function showUpgradePrompt() {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
+    function showUpgradePrompt() {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
         position: fixed;
         top: 20px;
         right: 20px;
@@ -874,7 +851,7 @@ function showUpgradePrompt() {
         box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     `;
 
-    notification.innerHTML = `
+        notification.innerHTML = `
         <h3 style="margin: 0 0 10px 0; font-size: 1.1rem;">⚠️ AI Limit Reached</h3>
         <p style="margin: 0 0 15px 0; font-size: 0.9rem;">You've used all your AI checks for today. Upgrade for unlimited access!</p>
         <button id="upgrade-now" style="
@@ -890,17 +867,18 @@ function showUpgradePrompt() {
         </button>
     `;
 
-    document.body.appendChild(notification);
+        document.body.appendChild(notification);
 
-    document.getElementById('upgrade-now').addEventListener('click', () => {
-        chrome.runtime.sendMessage({ action: 'openUpgradePage' });
-        notification.remove();
-    });
+        document.getElementById('upgrade-now').addEventListener('click', () => {
+            chrome.runtime.sendMessage({ action: 'openUpgradePage' });
+            notification.remove();
+        });
 
-    setTimeout(() => notification.remove(), 10000);
-}
+        setTimeout(() => notification.remove(), 10000);
+    }
 
-function removeGoalOverlay() {
-    const overlay = document.getElementById('youtube-goal-overlay');
-    if (overlay) overlay.remove();
-}
+    function removeGoalOverlay() {
+        const overlay = document.getElementById('youtube-goal-overlay');
+        if (overlay) overlay.remove();
+    }
+})();

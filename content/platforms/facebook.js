@@ -1,3 +1,4 @@
+(function() {
 // Facebook-Specific Content Script with Default Blocking
 console.log("🔵 Facebook Focus Guard Loaded");
 
@@ -271,3 +272,5 @@ setTimeout(() => {
 }, 1000);
 
 console.log("🔵 Facebook Focus Guard Ready");
+
+})();

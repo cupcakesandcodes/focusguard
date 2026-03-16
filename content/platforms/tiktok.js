@@ -1,3 +1,4 @@
+(function() {
 // TikTok-Specific Content Script with Default Blocking
 console.log("🎵 TikTok Focus Guard Loaded");
 
@@ -104,3 +105,5 @@ setTimeout(() => {
 }, 500);
 
 console.log("🎵 TikTok Focus Guard Ready");
+
+})();
