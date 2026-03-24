@@ -119,29 +119,7 @@ document.querySelectorAll('.auth-tab').forEach(tab => {
     });
 });
 
-// ── Magic Link ────────────────────────────────────
-document.getElementById('magicLinkBtn').addEventListener('click', async () => {
-    const email = document.getElementById('magicEmail').value.trim();
-    const msg = document.getElementById('magicMsg');
-    const btn = document.getElementById('magicLinkBtn');
-    if (!email) { showMsg(msg, 'Enter your email first', true); return; }
 
-    btn.disabled = true; btn.textContent = 'Sending…';
-    try {
-        const res = await fetch(`${BACKEND_URL}/auth/magic-link`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        showMsg(msg, '✅ Check your inbox!');
-    } catch (e) {
-        showMsg(msg, e.message || 'Failed to send', true);
-    } finally {
-        btn.disabled = false; btn.textContent = 'Send Magic Link';
-    }
-});
 
 // ── Google OAuth ──────────────────────────────────
 document.getElementById('googleSignInBtn').addEventListener('click', () => {

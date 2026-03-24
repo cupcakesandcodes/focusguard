@@ -1,0 +1,13 @@
+✅ gemini-2.5-flash-lite: SUCCESS - 1482ms - {"isRelevant": true, "confidence": 0.9, "reasoning": "test"}
+✅ gemini-flash-lite-latest: SUCCESS - 853ms - {"isRelevant": true, "confidence": 0.9, "reasoning": "test"}
+✅ gemini-3.1-flash-lite-preview: SUCCESS - 1156ms - {"isRelevant": true, "confidence": 0.9, "reasoning": "test"}
+✅ gemini-2.5-flash: SUCCESS - 1280ms - {
+  "isRelevant": true,
+  "confidence": 0.9,
+  "reasoning": "test"
+}
+✅ gemini-flash-latest: SUCCESS - 4895ms - {
+  "isRelevant": true,
+  "confidence": 0.9,
+  "reasoning": "test"
+}

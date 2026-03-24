@@ -6,7 +6,7 @@ const router = express.Router();
 
 // ── POST /api/auth/register ───────────────────────────────────
 // Supports Email+Password signup.
-// Magic link and Google OAuth are handled entirely client-side
+// Google OAuth is handled entirely client-side
 // via the Supabase JS client in the extension popup.
 router.post('/register', async (req, res) => {
     try {
@@ -99,30 +99,7 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// ── POST /api/auth/magic-link ──────────────────────────────────
-// Sends a magic link to the user's email.
-// The extension opens a new tab; user clicks link → signed in.
-router.post('/magic-link', async (req, res) => {
-    try {
-        const { email } = req.body;
-        if (!email) return res.status(400).json({ error: 'Email required' });
 
-        const { error } = await supabase.auth.signInWithOtp({
-            email,
-            options: {
-                // Deep link back to the extension's options page after clicking
-                emailRedirectTo: process.env.MAGIC_LINK_REDIRECT_URL || undefined
-            }
-        });
-
-        if (error) return res.status(400).json({ error: error.message });
-
-        res.json({ message: 'Magic link sent! Check your inbox.' });
-    } catch (error) {
-        console.error('Magic link error:', error);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
 
 // ── POST /api/auth/refresh ────────────────────────────────────
 // Refreshes an expired access token using a refresh token.

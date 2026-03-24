@@ -178,20 +178,6 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// Detect extension reload immediately using port connection
-// TEMPORARILY DISABLED - causing continuous reloads
-/*
-try {
-    const port = chrome.runtime.connect({ name: "keepalive" });
-    port.onDisconnect.addListener(() => {
-        console.log("🔄 Extension disconnected, refreshing page...");
-        window.location.reload();
-    });
-} catch (e) {
-    console.log("🔄 Could not connect to extension, refreshing page...");
-    window.location.reload();
-}
-*/
 function applyRedditBlocking() {
     // Remove existing style if present
     if (styleElement) {
@@ -250,8 +236,6 @@ function applyRedditBlocking() {
         // Try targeting the parent details element
         cssRules.push('details:has(> summary[aria-controls="RECENT"]) { display: none !important; }');
 
-
-
         console.log('🔴 Applied Recent blocking selectors');
     }
 
@@ -271,15 +255,12 @@ function applyRedditBlocking() {
         cssRules.push('reddit-sidebar-nav a[href*="popular/"]:has(span.text-14) { display: none !important; }');
 
         // Hide main feed content ONLY on /r/popular/ page using URL-specific selector
-        // Check current URL and only apply if on popular page
         const currentUrl = window.location.pathname;
         if (currentUrl === '/r/popular/' || currentUrl.startsWith('/r/popular/')) {
             cssRules.push('shreddit-feed { display: none !important; }');
             cssRules.push('shreddit-post { display: none !important; }');
             cssRules.push('#main-content { display: none !important; }');
             console.log('🔴 Hiding posts on /r/popular/ page');
-        } else {
-            console.log('🔴 Not on /r/popular/, posts visible');
         }
 
         // Target Popular Posts in left sidebar (on any page)
@@ -397,7 +378,7 @@ function applyRedditBlocking() {
                 el.style.setProperty('display', 'none', 'important');
             });
         }
-    }, 500);
+    }, 50);
 
     // Manually hide Recent section if needed (CSS not working)
     if (redditSettings.blockRecent) {
@@ -410,14 +391,14 @@ function applyRedditBlocking() {
                     console.log('✅ Manually hidden Recent section');
                 }
             }
-        }, 100);
+        }, 50);
     }
 }
 
 // Initial application
 setTimeout(() => {
     applyRedditBlocking();
-}, 500);
+}, 50);
 
 // Listen for URL changes (Reddit is a SPA)
 let lastUrl = location.pathname;
@@ -437,7 +418,7 @@ new MutationObserver(() => {
  */
 function extractPostData(postElement) {
     try {
-        // Get post title - for search results, it's in an H2 > A
+        // Get post title
         let titleElement = postElement.querySelector('h2 a') ||
             postElement.querySelector('[slot="title"]') ||
             postElement.querySelector('h3') ||
@@ -446,7 +427,7 @@ function extractPostData(postElement) {
 
         let title = titleElement ? titleElement.textContent.trim() : '';
 
-        // Get subreddit name - look for /r/ links
+        // Get subreddit name
         const subredditElement = postElement.querySelector('a[href*="/r/"]');
         let subreddit = '';
         if (subredditElement) {
@@ -455,7 +436,7 @@ function extractPostData(postElement) {
             subreddit = match ? match[1] : '';
         }
 
-        // Get post content/text - usually in a div or p tag
+        // Get post content/text
         const contentElement = postElement.querySelector('[slot="text-body"]') ||
             postElement.querySelector('[data-test-id="post-content"]') ||
             postElement.querySelector('.md') ||
@@ -473,45 +454,27 @@ function extractPostData(postElement) {
  * FREE TIER: Check post relevance using keyword matching
  */
 function checkPostRelevance(postData) {
-    if (!currentGoal) return true; // No goal = show everything
+    if (!currentGoal) return true;
 
     const stopWords = ['and', 'for', 'the', 'with', 'how', 'to', 'in', 'on', 'at', 'a', 'an', 'is', 'are', 'be', 'of'];
 
-    // Extract keywords from goal
     const goalKeywords = currentGoal
         .toLowerCase()
         .replace(/[^a-z0-9 ]/g, "")
         .split(" ")
         .filter(w => w.length >= 2 && !stopWords.includes(w));
 
-    // Create searchable context from post data
-    const postContext = `
-        ${postData.title}
-        ${postData.content}
-        ${postData.subreddit}
-    `.toLowerCase();
+    const postContext = `${postData.title} ${postData.content} ${postData.subreddit}`.toLowerCase();
 
-    console.log("🔍 Goal keywords:", goalKeywords);
-    console.log("📄 Post:", postData.title.substring(0, 50));
-
-    // Strategy 1: Exact keyword match
     const exactMatch = goalKeywords.some(keyword => postContext.includes(keyword));
-    if (exactMatch) {
-        console.log("✅ RELEVANT (exact match)");
-        return true;
-    }
+    if (exactMatch) return true;
 
-    // Strategy 2: Adaptive/Learned Keywords
     const goalKey = currentGoal.toLowerCase().trim();
     if (learnedKeywords && learnedKeywords[goalKey]) {
         const learnedMatch = learnedKeywords[goalKey].some(keyword => postContext.includes(keyword));
-        if (learnedMatch) {
-            console.log("✅ RELEVANT (Adaptive learning match)");
-            return true;
-        }
+        if (learnedMatch) return true;
     }
 
-    // Strategy 3: Fuzzy matching
     const postWords = postContext.split(/\s+/).filter(w => w.length >= 3);
     const fuzzyMatch = goalKeywords.some(gk => {
         if (gk.length >= 3) {
@@ -523,12 +486,8 @@ function checkPostRelevance(postData) {
         return false;
     });
 
-    if (fuzzyMatch) {
-        console.log("✅ RELEVANT (fuzzy match)");
-        return true;
-    }
+    if (fuzzyMatch) return true;
 
-    // Strategy 3: Learning mode
     const learningKeywords = ['learn', 'tutorial', 'course', 'study', 'guide', 'explained'];
     const isLearningGoal = learningKeywords.some(k => currentGoal.toLowerCase().includes(k));
 
@@ -546,14 +505,10 @@ function checkPostRelevance(postData) {
                 goalKeywords.some(gk => tw.includes(gk) || gk.includes(tw))
             );
 
-            if (sharedWords.length > 0) {
-                console.log("✅ RELEVANT (learning mode, shared:", sharedWords, ")");
-                return true;
-            }
+            if (sharedWords.length > 0) return true;
         }
     }
 
-    console.log("❌ NOT RELEVANT");
     return false;
 }
 
@@ -561,7 +516,6 @@ function checkPostRelevance(postData) {
  * Apply filtering to a post based on relevance
  */
 function applyPostFiltering(postElement, isRelevant) {
-    // Skip filtering if mode is off
     if (filterMode === 'off') {
         postElement.style.removeProperty('filter');
         postElement.style.removeProperty('opacity');
@@ -571,20 +525,17 @@ function applyPostFiltering(postElement, isRelevant) {
     }
 
     if (isRelevant) {
-        // Remove any existing filters
         postElement.style.removeProperty('filter');
         postElement.style.removeProperty('opacity');
         postElement.style.removeProperty('display');
         postElement.classList.remove('reddit-filtered-post');
     } else {
         if (filterMode === 'blur') {
-            // Blur the post
             postElement.style.filter = 'blur(8px)';
             postElement.style.opacity = '0.5';
             postElement.style.transition = 'filter 0.3s ease';
             postElement.classList.add('reddit-filtered-post');
 
-            // Add click to reveal
             postElement.style.cursor = 'pointer';
             postElement.addEventListener('click', function revealPost() {
                 postElement.style.filter = 'none';
@@ -592,7 +543,6 @@ function applyPostFiltering(postElement, isRelevant) {
                 postElement.removeEventListener('click', revealPost);
             }, { once: true });
         } else {
-            // Remove the post
             postElement.style.display = 'none';
             postElement.classList.add('reddit-filtered-post');
         }
@@ -603,36 +553,10 @@ function applyPostFiltering(postElement, isRelevant) {
  * Process all visible Reddit posts
  */
 async function processAllPosts() {
-    if (!isSessionActive || !currentGoal || filterMode === 'off') {
-        return;
-    }
+    if (!isSessionActive || !currentGoal || filterMode === 'off') return;
 
-    console.log("🎯 Processing Reddit posts for goal:", currentGoal);
-
-    // Clean up any existing alerts and reset blur effects
-    const oldAlert = document.getElementById('reddit-goal-alert');
-    if (oldAlert) {
-        oldAlert.remove();
-    }
-    const containers = document.querySelectorAll('div.bg-neutral-background');
-    containers.forEach(container => {
-        container.style.filter = '';
-        container.style.opacity = '';
-        container.style.pointerEvents = '';
-        container.style.display = '';
-    });
-
-    // Determine if we should use AI Monitor for platform sites (Premium)
     chrome.storage.local.get(['aiMonitor', 'isPremium'], async (result) => {
-        const usePremiumAIMonitor = result.aiMonitor && result.isPremium;
-
-        if (usePremiumAIMonitor) {
-            console.log("🤖 Premium AI Monitor is active - skipping keyword fallback on Reddit.");
-            // We exit because ai-monitor.js will handle the full-page block
-            return;
-        }
-
-        console.log("🔑 Using keyword analysis (Free)");
+        if (result.aiMonitor && result.isPremium) return;
         _runKeywordFallback();
     });
 }
@@ -641,28 +565,18 @@ async function processAllPosts() {
  * Keyword-based fallback for free users
  */
 async function _runKeywordFallback() {
-    // Check if we're on a search results page
     const searchQuery = new URLSearchParams(window.location.search).get('q');
     if (searchQuery) {
-        console.log("🔍 Search query detected:", searchQuery);
-
-        // Check if search query is relevant to goal
-        const isRelevant = checkPostRelevance({
-            title: searchQuery,
-            content: '',
-            subreddit: ''
-        });
+        const isRelevant = checkPostRelevance({ title: searchQuery, content: '', subreddit: '' });
 
         if (!isRelevant) {
-            console.log("❌ Search results not relevant to goal, hiding container");
-            const container = document.querySelector('div.bg-neutral-background.min-h-\\[calc\\(100vh-var\\(--shreddit-header-height\\)-var\\(--page-y-padding\\)\\)\\]');
+            const container = document.querySelector('div.bg-neutral-background');
             if (container) {
                 if (filterMode === 'blur') {
                     container.style.filter = 'blur(20px)';
                     container.style.opacity = '0.3';
                     container.style.pointerEvents = 'none';
 
-                    // Add message with unique ID
                     const message = document.createElement('div');
                     message.id = 'reddit-goal-alert';
                     message.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 10000; text-align: center;';
@@ -673,63 +587,33 @@ async function _runKeywordFallback() {
                 }
             }
             return;
-        } else {
-            console.log("✅ Search results relevant to goal");
         }
     }
 
-    // Find all post elements (support both old and new Reddit)
     let posts = document.querySelectorAll('shreddit-post');
-
-    // If no posts found, try search results page
-    // Use data-testid attribute for reliability
-    if (posts.length === 0) {
-        posts = document.querySelectorAll('div[data-testid="search-post-with-content-preview"]');
-    }
-
-    // If still no posts, try old Reddit selector
-    if (posts.length === 0) {
-        posts = document.querySelectorAll('div[data-testid="post-container"]');
-    }
-
-    console.log(`Found ${posts.length} posts (testid: ${posts.length > 0 ? posts[0].getAttribute('data-testid') : 'none'})`);
+    if (posts.length === 0) posts = document.querySelectorAll('div[data-testid="search-post-with-content-preview"]');
+    if (posts.length === 0) posts = document.querySelectorAll('div[data-testid="post-container"]');
 
     const postsToAnalyze = [];
     const postElements = [];
 
     for (const post of posts) {
         const postId = post.getAttribute('id') || post.getAttribute('data-post-id');
-
-        // Skip if already processed
-        if (processedPosts.has(postId)) {
-            continue;
-        }
+        if (processedPosts.has(postId)) continue;
 
         const postData = extractPostData(post);
-
-        // Skip if no title
-        if (!postData.title) {
-            continue;
-        }
+        if (!postData.title) continue;
 
         postsToAnalyze.push(postData);
         postElements.push(post);
         processedPosts.add(postId);
     }
 
-    if (postsToAnalyze.length === 0) {
-        console.log("No new posts to analyze");
-        return;
-    }
+    if (postsToAnalyze.length === 0) return;
 
-
-    console.log(`Analyzing ${postsToAnalyze.length} new posts...`);
-
-    // FREE: Use keyword-based analysis
     postsToAnalyze.forEach((postData, index) => {
         const isRelevant = checkPostRelevance(postData);
         applyPostFiltering(postElements[index], isRelevant);
-        console.log(`Post "${postData.title.substring(0, 50)}..." - ${isRelevant ? 'RELEVANT' : 'IRRELEVANT'} (Keyword)`);
     });
 }
 
@@ -752,11 +636,10 @@ function removeAllFilters() {
  */
 const postObserver = new MutationObserver((mutations) => {
     if (isSessionActive && currentGoal) {
-        // Debounce processing
         clearTimeout(window.redditProcessTimeout);
         window.redditProcessTimeout = setTimeout(() => {
             processAllPosts();
-        }, 1000);
+        }, 100);
     }
 });
 
@@ -767,15 +650,14 @@ setTimeout(() => {
         childList: true,
         subtree: true
     });
-}, 2000);
+}, 200);
 
 // Check for existing session on load
 chrome.storage.local.get(['activeSession'], (result) => {
     if (result.activeSession && result.activeSession.goal) {
         currentGoal = result.activeSession.goal;
         isSessionActive = true;
-        console.log("🎯 Reddit: Existing session found:", currentGoal);
-        setTimeout(() => processAllPosts(), 2000);
+        setTimeout(() => processAllPosts(), 200);
     }
 });
 

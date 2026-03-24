@@ -139,6 +139,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   } else if (request.action === "fetchAI") {
+    console.time('BACKGROUND-TO-BACKEND');
     // Proxy the AI API call through background to bypass page CSP (e.g. Reddit)
     fetch(`http://127.0.0.1:3000/api/ai/check-ai`, {
       method: 'POST',
@@ -149,10 +150,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       body: JSON.stringify(request.payload)
     })
       .then(async res => {
+        console.timeEnd('BACKGROUND-TO-BACKEND');
         const data = await res.json().catch(() => ({}));
         sendResponse({ status: res.status, ok: res.ok, data });
       })
       .catch(err => {
+        console.timeEnd('BACKGROUND-TO-BACKEND');
         sendResponse({ status: 500, ok: false, data: { error: err.message } });
       });
 

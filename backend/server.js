@@ -18,10 +18,10 @@ app.use(cors({
     credentials: false // Must be false if origin is '*'
 }));
 
-// Rate limiting — 100 req / 15 min per IP
+// Rate limiting — 500 req / 15 min per IP (increased for dev testing)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 500,
     standardHeaders: true,
     legacyHeaders: false
 });

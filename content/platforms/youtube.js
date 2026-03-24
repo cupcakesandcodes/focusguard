@@ -102,7 +102,7 @@
             lastUrl = url;
             console.log("📍 YouTube navigation detected");
             if (aiMonitorEnabled && currentGoal) {
-                setTimeout(() => checkCurrentVideo(), 1000);
+                setTimeout(() => checkCurrentVideo(), 200);
             }
         }
     }).observe(document, { subtree: true, childList: true });
@@ -168,7 +168,7 @@
     document.addEventListener('play', (e) => {
         if (e.target.tagName === 'VIDEO') {
             console.log("▶️ Video play detected");
-            setTimeout(() => checkCurrentVideo(), 800);
+            setTimeout(() => checkCurrentVideo(), 500);
         }
     }, true);
 
@@ -350,7 +350,7 @@
             } else {
                 checkWithKeywords(videoData);
             }
-        }, 1500);
+        }, 300);
     }
 
     // Check thumbnails on browse pages (blur non-relevant videos ONLY in keyword mode)

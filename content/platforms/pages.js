@@ -155,16 +155,16 @@
         const bestTitle = redditTitle || h1 || title;
 
         const bodyText = (() => {
-            const selectors = ['article', 'main', '.content', '#content', '.post-body', '.article-body', 'section'];
+            const selectors = ['article', 'main', '.markdown-body', '.content', '#content', '.post-body', '.article-body', 'section'];
             for (const sel of selectors) {
                 const el = document.querySelector(sel);
                 if (el) {
-                    const text = el.innerText?.replace(/\s+/g, ' ').trim().slice(0, 400);
+                    const text = el.innerText?.replace(/\s+/g, ' ').trim().slice(0, 600);
                     if (text && text.length > 50) return text;
                 }
             }
-            const paras = [...document.querySelectorAll('p')].slice(0, 4).map(p => p.innerText?.trim()).filter(Boolean).join(' ');
-            return paras.slice(0, 400);
+            const paras = [...document.querySelectorAll('p')].slice(0, 5).map(p => p.innerText?.trim()).filter(Boolean).join(' ');
+            return paras.slice(0, 600);
         })();
 
         const description = [metaDesc, metaKeywords, bodyText].filter(Boolean).join(' | ').slice(0, 600);
@@ -192,7 +192,7 @@
             const paramKey = searchEngines[matchedEngine];
             const query = new URLSearchParams(window.location.search).get(paramKey);
             if (!query) return;
-            await new Promise(r => setTimeout(r, 800));
+            await new Promise(r => setTimeout(r, 200));
             if (!window.aiMonitor) return;
             await window.aiMonitor.checkAndBlock(goal, {
                 title: `Search: "${query}"`,
@@ -203,7 +203,7 @@
             return;
         }
 
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 400));
         if (!window.aiMonitor) return;
 
         const pageData = extractPageContent();

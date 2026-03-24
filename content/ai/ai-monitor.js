@@ -16,6 +16,10 @@
     // ── Auth state ──────────────────────────────────
     let _token = null;
     let _isPremium = false;
+    let _isScanning = false;
+    let _currentScanId = 0; // Prevent stale results during navigation
+    let _cooldownUntil = 0; // Time in MS to skip scans until (for Rate Limiting)
+    const _scanCache = new Map(); // URL → { isRelevant, confidence, reasoning, goal } (session-only)
 
     // Load on init and stay in sync
     chrome.storage.local.get(['authToken', 'isPremium'], ({ authToken, isPremium }) => {
@@ -64,6 +68,11 @@
     // ── Core fetch function (proxied through background) ──
     async function _fetchAI(goal, videoData, isRetry = false, userJustification = '') {
         return new Promise((resolve, reject) => {
+            if (!_token) {
+                console.warn('[AI Monitor] No auth token found, skipping AI scan.');
+                return resolve({ used: false, error: 'Not authenticated' });
+            }
+
             const payload = {
                 goal,
                 videoTitle: videoData.title || '',
@@ -73,11 +82,23 @@
                 userJustification
             };
 
+            console.time('CONTENT-TO-BACKGROUND');
+            console.time('BACKGROUND-WAIT');
+
             chrome.runtime.sendMessage({
                 action: 'fetchAI',
                 token: _token,
                 payload
             }, async (response) => {
+                try { console.timeEnd('BACKGROUND-WAIT'); } catch(e){}
+                
+                // If a new scan started while we were waiting, ignore this response
+                if (window.location.href !== payload.url && !userJustification) {
+                    console.log('[AI Monitor] Ignoring stale response for old URL');
+                    return;
+                }
+                
+                console.time('BACKEND-TO-CONTENT');
                 if (chrome.runtime.lastError) {
                     console.error('[AI Monitor] Extension connection error:', chrome.runtime.lastError);
                     return reject(new Error('Background script disconnected'));
@@ -89,12 +110,18 @@
 
                 const { status, ok, data } = response;
 
+                if (status === 429) {
+                    console.warn('[AI Monitor] Rate limit hit (429). Cooling down for 60s.');
+                    _cooldownUntil = Date.now() + 60000;
+                    return reject(new Error('Daily scan limit reached. Please try again later.'));
+                }
+
                 if (status === 401 && !isRetry) {
                     console.log('[AI Monitor] Token expired — attempting refresh...');
                     const refreshed = await _tryRefreshToken();
                     if (refreshed) {
                         try {
-                            const retryRes = await _fetchAI(goal, videoData, true);
+                            const retryRes = await _fetchAI(goal, videoData, true, userJustification);
                             return resolve(retryRes);
                         } catch (err) {
                             return reject(err);
@@ -109,6 +136,7 @@
                     return reject(new Error(data.detail || data.error || `HTTP ${status}`));
                 }
 
+                console.timeEnd('BACKEND-TO-CONTENT');
                 resolve(data);
             });
         });
@@ -150,6 +178,14 @@
 
     // ── Full-screen block overlay ────────────────────
     function _showBlockOverlay(goal, videoData, aiResult, onRecheck) {
+        // Guard: If the URL has changed since the scan started, don't show the block
+        const currentUrl = window.location.href;
+        const scanUrl = videoData.url || currentUrl;
+        if (currentUrl !== scanUrl) {
+            console.log('[AI Monitor] Skipping block overlay: URL changed since scan.');
+            return;
+        }
+
         _removeBlockOverlay();
 
         // Pause video immediately
@@ -158,10 +194,18 @@
         const overlay = document.createElement('div');
         overlay.id = 'fg-block-overlay';
 
-        // Smart placement logic: if we are on Reddit or YouTube, leave the top header (search bar) unblocked
-        const isReddit = window.location.hostname.includes('reddit.com');
-        const isYouTube = window.location.hostname.includes('youtube.com');
-        const insetRule = (isReddit || isYouTube) ? 'top: 56px; left: 0; right: 0; bottom: 0;' : 'inset: 0;';
+        // Smart placement: leave the search bar visible so users can navigate to a new topic
+        const host = window.location.hostname;
+        const isReddit = host.includes('reddit.com');
+        const isYouTube = host.includes('youtube.com');
+        const isX = host.includes('x.com') || host.includes('twitter.com');
+        const isGoogle = host.includes('google.com');
+        
+        let insetRule = 'inset: 0;';
+        if (isReddit) insetRule = 'top: 80px; left: 0; right: 0; bottom: 0;';
+        else if (isYouTube) insetRule = 'top: 72px; left: 0; right: 0; bottom: 0;';
+        else if (isX) insetRule = 'top: 64px; left: 0; right: 0; bottom: 0;';
+        else if (isGoogle) insetRule = 'top: 80px; left: 0; right: 0; bottom: 0;';
 
         overlay.style.cssText = `
             position: fixed; ${insetRule}
@@ -302,8 +346,9 @@
      * Run AI check. If off-topic, block the full page.
      * @param {string} goal
      * @param {{ title, channel, description }} videoData
+     * @param {number} [scanId] - Optional ID to prevent stale results
      */
-    async function checkAndBlock(goal, videoData) {
+    async function checkAndBlock(goal, videoData, scanId = 0) {
         // Always re-read token fresh from storage
         return new Promise((resolve) => {
             chrome.storage.local.get(['authToken', 'isPremium'], async ({ authToken, isPremium }) => {
@@ -316,14 +361,47 @@
                     return;
                 }
 
-                _showScanningNotice('AI Monitor scanning video...');
+                _isScanning = true;
+                _showScanningNotice('Analysing content...');
+
+                // ── Check session scan cache ──
+                const pageUrl = videoData.url || window.location.href;
+                const cached = _scanCache.get(pageUrl);
+                if (cached && cached.goal === goal) {
+                    console.log(`⚡ [AI Monitor] Cache HIT for ${pageUrl}`);
+                    _isScanning = false;
+                    _removeScanningNotice();
+                    if (scanId !== 0 && scanId !== _currentScanId) {
+                        console.log('[AI Monitor] Aborting block: stale scan ID');
+                        return;
+                    }
+                    if (!cached.isRelevant) {
+                        _showBlockOverlay(goal, videoData, cached, (just) => recheck(goal, videoData, just));
+                    } else {
+                        _removeBlockOverlay();
+                    }
+                    resolve({ used: true, isRelevant: cached.isRelevant, result: cached });
+                    return;
+                }
+
                 try {
                     const result = await _fetchAI(goal, videoData);
+                    _isScanning = false;
                     _removeScanningNotice();
+
+                    // Crucial check: if a new scan has started while this one was in progress,
+                    // ignore the result of this older scan to prevent stale UI updates.
+                    if (scanId !== 0 && scanId !== _currentScanId) {
+                        console.log('[AI Monitor] Aborting block: stale scan ID');
+                        return;
+                    }
 
                     console.log('[AI Monitor] Raw AI Result Payload:', result);
                     console.log('[AI Monitor] Result:', result.isRelevant ? '✅ RELEVANT' : '❌ BLOCKED', '| Confidence:', result.confidence);
                     if (result.reasoning) console.log('[AI Monitor] Reason:', result.reasoning);
+
+                    // ── Store in session cache ──
+                    _scanCache.set(pageUrl, { ...result, goal });
 
                     if (!result.isRelevant) {
                         _showBlockOverlay(goal, videoData, result, (just) => recheck(goal, videoData, just));
@@ -335,6 +413,7 @@
 
                     resolve({ used: true, isRelevant: result.isRelevant, result });
                 } catch (err) {
+                    _isScanning = false;
                     _removeScanningNotice();
                     console.error('[AI Monitor] Error:', err.message);
                     resolve({ used: false, error: err.message });
@@ -352,6 +431,11 @@
      */
     async function recheck(goal, videoData, userJustification = '') {
         _showScanningNotice('Evaluating justification...');
+        // Clear caches for this URL to ensure a fresh scan
+        const pageUrl = videoData.url || window.location.href;
+        _scanCache.delete(pageUrl);
+        _justifiedUrls.delete(pageUrl);
+        
         try {
             const result = await _fetchAI(goal, videoData, false, userJustification);
             _removeScanningNotice();
@@ -401,37 +485,123 @@
     if ((isPlatformSite || isYouTube)) {
 
         const runPlatformScan = () => {
+            if (_isScanning) {
+                console.log('[AI Monitor] Scan already in progress, skipping auto-scan...');
+                return;
+            }
+
+            const scanId = ++_currentScanId;
+            _isScanning = true;
+            _showScanningNotice('Analysing content...');
+            if (Date.now() < _cooldownUntil) {
+                console.log('[AI Monitor] Cooling down from 429 error, skipping scan...');
+                return;
+            }
             if (_justifiedUrls.has(window.location.href)) return;
 
             chrome.storage.local.get(['aiMonitor', 'currentGoal', 'activeSession'], (result) => {
-                if (!result.aiMonitor || !result.currentGoal || !result.activeSession) return;
+                if (!result.aiMonitor || !result.currentGoal || !result.activeSession) {
+                    _isScanning = false;
+                    _removeScanningNotice();
+                    return;
+                }
 
                 console.log(`[AI Monitor] Auto-scanning platform site: ${hostname}`);
 
-                // Enhanced Context Extraction for YouTube
+                // === YOUTUBE: Precise Context Extraction (port from youtube.js) ===
                 let title = document.title;
                 let description = "";
+                let dataReady = true;
 
                 if (isYouTube) {
+                    const pathname = window.location.pathname;
                     const urlParams = new URLSearchParams(window.location.search);
-                    const searchQuery = urlParams.get('search_query');
-                    if (searchQuery) {
-                        description = `YouTube Search Query: ${searchQuery}`;
-                    }
 
-                    // Check if we are on a channel page
-                    if (window.location.pathname.startsWith('/@') || window.location.pathname.includes('/channel/')) {
-                        const channelName = document.querySelector('ytd-channel-name yt-formatted-string')?.textContent ||
-                            document.querySelector('#channel-name')?.textContent || "";
-                        description += ` | Viewing YouTube Channel: ${channelName}`;
+                    if (pathname.includes('/watch')) {
+                        // -- Watch Page: Precise DOM selectors from the old youtube.js reference
+                        const videoTitle = document.querySelector(
+                            'h1.ytd-video-primary-info-renderer yt-formatted-string, h1.ytd-watch-metadata yt-formatted-string, h1.title yt-formatted-string'
+                        )?.innerText?.trim() || "";
+                        const videoDesc = document.querySelector(
+                            '#description-inline-expander, ytd-text-inline-expander, #description-text'
+                        )?.innerText?.trim()?.slice(0, 500) || "";
+                        const channelName = document.querySelector(
+                            '#channel-name a, ytd-channel-name a'
+                        )?.innerText?.trim() || "";
+                        const metaDesc = document.querySelector('meta[name="description"]')?.content || "";
+
+                        // Guard: If DOM isn't ready, retry
+                        if (!videoTitle) {
+                            dataReady = false;
+                            console.log('[AI Monitor] Video DOM not ready, retrying in 1s...');
+                            setTimeout(runPlatformScan, 1000);
+                        } else {
+                            title = videoTitle;
+                            description = `Channel: ${channelName} | Description: ${videoDesc} | Meta: ${metaDesc}`;
+                        }
+
+                    } else if (pathname.includes('/results')) {
+                        // -- Search Results Page: Use query + visible titles
+                        const searchQuery = urlParams.get('search_query') || "";
+                        const resultTitles = Array.from(
+                            document.querySelectorAll('ytd-video-renderer #video-title, ytd-video-renderer a#video-title')
+                        ).slice(0, 10).map(el => el.innerText?.trim()).filter(Boolean);
+
+                        if (!searchQuery && resultTitles.length === 0) {
+                            dataReady = false;
+                            console.log('[AI Monitor] Search DOM not ready, retrying in 1s...');
+                            setTimeout(runPlatformScan, 1000);
+                        } else {
+                            title = `YouTube Search: ${searchQuery}`;
+                            description = `Search query: "${searchQuery}" | Results shown: ${resultTitles.join(' | ')}`;
+                        }
+
+                    } else if (pathname.startsWith('/@') || pathname.includes('/channel/')) {
+                        // -- Channel Page
+                        const channelName = document.querySelector('ytd-channel-name yt-formatted-string')?.textContent?.trim() ||
+                            document.querySelector('#channel-name')?.textContent?.trim() || "";
+                        description = `Viewing YouTube Channel: ${channelName}`;
+
+                    } else if (pathname === '/') {
+                        // -- Home Feed
+                        const visibleTitles = Array.from(document.querySelectorAll('ytd-rich-grid-renderer #video-title'))
+                            .slice(0, 8).map(el => el.innerText?.trim()).filter(Boolean);
+                        title = "YouTube Home Feed";
+                        description = `Home feed videos: ${visibleTitles.join(' | ')}`;
                     }
                 }
 
-                if (!description) {
-                    const mainTextEl = document.querySelector('main, [role="main"], article, .feed, #stream, #content');
-                    description = mainTextEl?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 1000) ||
-                        document.body.textContent.replace(/\s+/g, ' ').trim().slice(0, 1000);
+                // If not ready to scan, skip
+                if (!dataReady) {
+                    _isScanning = false;
+                    _removeScanningNotice();
+                    return;
                 }
+
+                if (!description && !isYouTube) {
+                    // General fallback for non-YouTube platforms
+                    const isReddit = hostname.includes('reddit.com');
+                    const isX = hostname.includes('x.com') || hostname.includes('twitter.com');
+
+                    if (isReddit) {
+                        const postTitles = Array.from(document.querySelectorAll('shreddit-post[post-title]'))
+                            .map(el => el.getAttribute('post-title')).slice(0, 10);
+                        if (postTitles.length > 0) description = `Reddit Feed Titles: ${postTitles.join(' | ')}`;
+                    } else if (isX) {
+                        const tweets = Array.from(document.querySelectorAll('[data-testid="tweetText"]'))
+                            .map(el => el.innerText.replace(/\n/g, ' ')).slice(0, 8);
+                        if (tweets.length > 0) description = `X/Twitter Feed Contents: ${tweets.join(' | ')}`;
+                    }
+
+                    if (!description) {
+                        const selectors = ['#main-content', 'shreddit-feed', '[role="main"]', 'article', 'main', '.markdown-body'];
+                        let el = null;
+                        for (const s of selectors) { el = document.querySelector(s); if (el) break; }
+                        description = el?.innerText?.slice(0, 2000) || document.body.innerText.slice(0, 2000);
+                    }
+                }
+                
+                description = description.replace(/\s+/g, ' ').trim();
 
                 const pageData = {
                     title: title,
@@ -441,35 +611,97 @@
                 };
 
                 console.log('[AI Monitor] Sending to Gemini:', pageData);
+                console.time('AI-TOTAL');
+                console.time('CONTENT-TO-BACKGROUND');
 
-                checkAndBlock(result.currentGoal, pageData).catch(err => {
+                checkAndBlock(result.currentGoal, pageData, scanId).then((res) => {
+                    if (res && res.used) {
+                        try { console.timeEnd('AI-TOTAL'); } catch(e){}
+                    }
+                }).catch(err => {
                     console.error('[AI Monitor] Auto-scan error:', err);
+                    _isScanning = false;
+                    _removeScanningNotice();
+                    try { console.timeEnd('AI-TOTAL'); } catch(e){}
                 });
             });
         };
 
-        // 1. Initial Scan on page load (wait 4s for DOM to build)
-        setTimeout(runPlatformScan, 4000);
+        // 1. Initial Scan on page load
+        setTimeout(runPlatformScan, 400);
 
-        // 2. Continuous Scan on SPA Navigation
+        // 2. Continuous Detection (Polling + Title Observer + Platform Events)
         let lastUrl = location.href;
-        new MutationObserver(() => {
-            if (location.href !== lastUrl) {
-                lastUrl = location.href;
-                console.log('[AI Monitor] URL changed, checking if scan is needed...');
+        let lastTitle = document.title;
 
-                if (_justifiedUrls.has(location.href)) {
-                    console.log('[AI Monitor] Auto-scan skipped for justified URL.');
+        const handleNavigation = (source) => {
+            const currentUrl = location.href;
+            const currentTitle = document.title;
+            
+            // Smart Guard: Ignore title updates if typing in a search bar
+            const activeInput = document.activeElement;
+            const isTyping = activeInput && (activeInput.tagName === 'INPUT' || activeInput.getAttribute('role') === 'combobox');
+
+            if (currentUrl !== lastUrl || (currentTitle !== lastTitle && !isTyping)) {
+                console.log(`[AI Monitor] Navigation detected (${source}):`, currentUrl);
+                
+                // Clear cache for old URL before updating lastUrl
+                _scanCache.delete(lastUrl);
+                _scanCache.delete(currentUrl);
+                lastUrl = currentUrl;
+                lastTitle = currentTitle;
+
+                // Instant UI/Lock Clear
+                _removeBlockOverlay();
+                _removeScanningNotice();
+                _isScanning = false;
+                _currentScanId++; 
+
+                // For YouTube: yt-navigate-finish handles the scan at the right time.
+                // The poller ONLY clears the UI here; it must NOT trigger a premature scan.
+                if (isYouTube) {
+                    console.log('[AI Monitor] YouTube nav detected by poller — scan deferred to yt-navigate-finish');
                     return;
                 }
 
-                // Show a quick scanning notice while waiting for new content to load
-                _showScanningNotice('Waiting for new page to load...');
-
-                setTimeout(() => {
-                    runPlatformScan();
-                }, 3000); // Wait 3s after URL change for React/SPA to render new feed
+                chrome.storage.local.get(['aiMonitor', 'currentGoal', 'activeSession'], (result) => {
+                    if (!result.aiMonitor || !result.currentGoal || !result.activeSession) return;
+                    
+                    // For non-YouTube sites, use a simple fixed delay
+                    setTimeout(runPlatformScan, 600); 
+                });
             }
-        }).observe(document.body, { subtree: true, childList: true });
+        };
+
+        // --- Platform-Specific Precise Events ---
+        if (isYouTube) {
+            // yt-navigate-start: Clear UI AND cache INSTANTLY when you click a link
+            window.addEventListener('yt-navigate-start', () => {
+                console.log('[AI Monitor] YouTube navigate START — clearing UI + cache');
+                _removeBlockOverlay();
+                _removeScanningNotice();
+                _isScanning = false;
+                _currentScanId++;
+                // Clear cache for the old page so next scan is always fresh
+                _scanCache.delete(location.href);
+            });
+
+            // yt-navigate-finish: Trigger scan when transition is FULLY complete
+            window.addEventListener('yt-navigate-finish', () => {
+                console.log('[AI Monitor] YouTube navigate FINISH — clearing new URL cache, then scanning');
+                // Also clear the new destination URL from cache before scanning
+                _scanCache.delete(location.href);
+                lastUrl = location.href; 
+                lastTitle = document.title;
+                // 1500ms: gives YouTube's SPA renderer enough time to fully swap DOM
+                setTimeout(runPlatformScan, 1500); 
+            });
+        }
+
+        // Fast Poller (200ms) fallback
+        setInterval(() => handleNavigation('poller'), 200);
+
+        // Popstate listener for browser back/forward navigation
+        window.addEventListener('popstate', () => handleNavigation('popstate'));
     }
 })();

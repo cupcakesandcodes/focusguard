@@ -4,9 +4,17 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-// ── Model: Gemini 2.0 Flash Lite (Fast and Efficient) ──
+// ── Model: Gemini 3.1 Flash Lite (with thinking disabled for speed) ──
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const model = genAI.getGenerativeModel({
+    model: 'gemini-3.1-flash-lite-preview',
+    generationConfig: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 100,
+        temperature: 0,
+        thinkingConfig: { thinkingBudget: 0 }
+    }
+});
 
 // ── In-memory result cache: videoId → { result, cachedAt } ──
 // Key: SHA-1-like string of "goal|videoTitle|channel"
@@ -14,10 +22,10 @@ const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 const resultCache = new Map();
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-function getCacheKey(goal, videoTitle, videoChannel = '', userJustification = '') {
-    // Normalize so minor differences don't bypass cache
-    const normalized = [goal, videoTitle, videoChannel, userJustification]
-        .map(s => s.toLowerCase().trim())
+function getCacheKey(goal, videoTitle, videoChannel = '', videoDescription = '', userJustification = '') {
+    const SCAN_SPEC = 'v9'; // V9: Precise YouTube DOM extraction (watch/search/home)
+    const normalized = [SCAN_SPEC, goal, videoTitle, videoChannel, videoDescription, userJustification]
+        .map(s => (s || '').toLowerCase().trim())
         .join('|');
     return Buffer.from(normalized).toString('base64').slice(0, 64);
 }
@@ -45,8 +53,9 @@ function pruneCache() {
 // ── Daily scan limit ──
 const DAILY_AI_LIMIT = parseInt(process.env.PREMIUM_TIER_DAILY_LIMIT) || 150;
 
+/* 
 // ─────────────────────────────────────────
-// Keyword-based check (FREE — no auth)
+// Keyword-based check (LEGACY — Disabled)
 // ─────────────────────────────────────────
 router.post('/check-keyword', async (req, res) => {
     try {
@@ -77,6 +86,7 @@ router.post('/check-keyword', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+*/
 
 // ─────────────────────────────────────────
 // AI-based check (PREMIUM — requires auth)
@@ -117,7 +127,7 @@ router.post('/check-ai', authMiddleware, async (req, res) => {
         }
 
         // ── Check cache ──
-        const cacheKey = getCacheKey(goal, videoTitle, videoChannel || '', userJustification || '');
+        const cacheKey = getCacheKey(goal, videoTitle, videoChannel || '', videoDescription || '', userJustification || '');
         const cached = getCached(cacheKey);
         if (cached) {
             return res.json({
@@ -128,72 +138,55 @@ router.post('/check-ai', authMiddleware, async (req, res) => {
             });
         }
 
-        // ── Call Gemini ──
+        // ── Call Gemini AI ──
         const url = req.body.url || '';
+        const content = (videoDescription || '').slice(0, 500);
 
-        let prompt = `You are a focus assistant for a productivity extension. Determine if this web page is relevant to the user's goal.
-
-User's Goal: "${goal}"
-
-Page Info:
-- Title: ${videoTitle}
-- Site/Channel: ${videoChannel || 'N/A'}
-- URL: ${url}
-- Description/Content: ${(videoDescription || '').slice(0, 500)}`;
-
+        let prompt;
         if (userJustification) {
-            prompt += `
-            
-The user was previously blocked from this page, but they submitted a justification for why they need it:
-User's Justification: "${userJustification}"
-
-Evaluate their justification considering their goal and the page content. If their reasoning relates to research, learning, productivity, or work, you MUST allow it (isRelevant: true). FocusGuard should stay out of the way of legitimate work. Only block if the justification is clearly unrelated or an attempt to bypass the monitor for entertainment.`;
+            prompt = `Goal: "${goal}". User was blocked but justifies: "${userJustification}". Page: "${videoTitle}" (${url}). Content snippet: ${content}. If justification relates to learning, research, or work, allow it. JSON: {"isRelevant":bool,"confidence":number,"reasoning":"brief"}`;
         } else {
-            prompt += `
-            
-IMPORTANT RULES:
-1. Use the URL as a strong signal. developer.mozilla.org, docs.*, github.com, stackoverflow.com, npmjs.com, w3schools.com, official docs, tutorials = highly likely relevant.
-2. AI Tools (chatgpt.com, openai.com, claude.ai, gemini.google.com, perplexity.ai) = Almost always relevant for productivity and research goals. Mark as relevant.
-3. Search engine results (google.com/search, bing.com) = relevant if the query relates to the goal.
-4. Be VERY LENIENT with documentation, reference, and learning sites. If the goal is technical, research-based, or work-related, lean heavily toward relevant.
-5. Only mark NOT relevant if the page is clearly unrelated entertainment/social content (gaming, sports, movies) for a non-matching goal.`;
+            prompt = `Goal: "${goal}". Page: "${videoTitle}" (${url}). Context: ${content}.
+Instructions: Is this page relevant to the goal?
+1. **Relevance Logic**: Allow any content that is a logical sub-topic, prerequisite, supporting tool, or professional reference related to the user's goal.
+2. **Professional Tolerance**: Be lenient toward technical documentation, educational tutorials, and professional search results. FocusGuard should only block clear "mindless distractions" that have NO plausible link to the goal.
+3. **Broad vs Specific**: If the goal is a specific topic, ignore broad/generic social feeds unless they are specifically filtered for that topic.
+4. **Primary vs Supporting**: Avoid blocking content simply because it isn't an *exact* match. If the content supports the user's progress toward the goal (even indirectly), allow it.
+JSON ONLY: {"isRelevant":bool,"confidence":number,"reasoning":"brief"}`;
         }
 
-        prompt += `
-
-Reply ONLY with a JSON object, no markdown, no code fences:
-{"isRelevant": true/false, "confidence": 0.0-1.0, "reasoning": "one short sentence explaining why"}`;
-
+        const timerId = `GEMINI-${Date.now()}`;
+        console.time(timerId);
         const result = await model.generateContent(prompt);
-        const text = result.response.text().trim();
-
-        // Parse — handle both raw JSON and code-fenced JSON
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('Invalid AI response format');
-
-        const aiResult = JSON.parse(jsonMatch[0]);
+        const aiResult = JSON.parse(result.response.text());
+        console.timeEnd(timerId);
 
         // ── Store in cache ──
         pruneCache();
         resultCache.set(cacheKey, { result: aiResult, cachedAt: Date.now() });
 
-        // ── Increment usage in Supabase ──
-        const { supabase } = require('../supabase');
-        await supabase
-            .from('profiles')
-            .update({
-                usage_ai_checks_today: isNewDay ? 1 : todayCount + 1,
-                usage_ai_checks_total: profile.usage_ai_checks_total + 1,
-                usage_ai_last_reset: isNewDay ? now.toISOString() : profile.usage_ai_last_reset
-            })
-            .eq('id', user.id);
-
+        // ── Respond IMMEDIATELY ──
         res.json({
             ...aiResult,
             method: 'ai',
             fromCache: false,
             remainingScans: DAILY_AI_LIMIT - todayCount - 1
         });
+
+        // ── Increment usage in Supabase (don't await, let it run in background) ──
+        const { supabase } = require('../supabase');
+        supabase
+            .from('profiles')
+            .update({
+                usage_ai_checks_today: isNewDay ? 1 : todayCount + 1,
+                usage_ai_checks_total: profile.usage_ai_checks_total + 1,
+                usage_ai_last_reset: isNewDay ? now.toISOString() : profile.usage_ai_last_reset
+            })
+            .eq('id', user.id)
+            .then(() => console.log(`✅ Usage updated for user ${user.id}`))
+            .catch(err => console.error(`❌ Usage update failed for user ${user.id}:`, err.message));
+
+        return; // End the request handler here
 
     } catch (error) {
         console.error('AI check error:', error.message);
